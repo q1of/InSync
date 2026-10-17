@@ -1,0 +1,18 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node / сборка webapp
+webapp/node_modules/
+webapp/dist/
+webapp/.vite/
+
+# Секреты
+backend/.env
+
+# Локальные данные (БД, логи, отладочные дампы входа)
+data/*.db
+data/*.log
+data/sso_debug_*.html
+data/sso_trace_*.json

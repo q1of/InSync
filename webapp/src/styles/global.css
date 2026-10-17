@@ -1,0 +1,332 @@
+/* ======================================================================
+   InSync — монохромная тема: чистые чёрно-бело-серые тона.
+   Акцент — белый. Статусы различаются яркостью и иконками (✓/✕),
+   без цвета. Движение — только в ответ на действие (вспышка захвата).
+   ====================================================================== */
+
+:root {
+  /* фоны */
+  --bg:        #09090B;
+  --bg-2:      #121214;
+  --surface:   #151517;
+  --surface-2: #1D1D20;
+  --hairline:  rgba(255, 255, 255, 0.08);
+  --hairline-2: rgba(255, 255, 255, 0.18);
+
+  /* текст */
+  --ink:       #F5F5F7;
+  --ink-dim:   #9A9AA2;
+  --ink-faint: #5B5B64;
+
+  /* акцент (белый) — имена переменных сохранены ради совместимости */
+  --sig-a:     #FFFFFF;
+  --sig-b:     #FFFFFF;
+  --accent:    #FFFFFF;
+  --glow:      rgba(255, 255, 255, 0.12);
+
+  /* статусы (монохром): успех ярче, неудача тусклее */
+  --live:      #FFFFFF;
+  --live-dim:  rgba(255, 255, 255, 0.12);
+  --miss:      #83838C;
+  --miss-dim:  rgba(255, 255, 255, 0.05);
+  --warn:      #C4C4CA;
+
+  --r-xl: 28px;
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 12px;
+
+  --shadow-lift: 0 18px 40px -20px rgba(0, 0, 0, 0.85);
+  --tab-h: 74px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #app { height: 100%; width: 100%; }
+html, body { overflow-x: clip; max-width: 100%; }
+
+body {
+  font-family: 'Golos Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* лёгкое ахроматическое свечение сверху — общая атмосфера */
+body::before {
+  content: "";
+  position: fixed;
+  top: -45vh; left: 50%;
+  width: 100vw; height: 90vh;
+  transform: translateX(-50%);
+  background: radial-gradient(42% 48% at 50% 50%, rgba(255, 255, 255, 0.06), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+h1, h2, h3, .display {
+  font-family: 'Unbounded', 'Golos Text', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.eyebrow { font-size: 12px; color: var(--ink-faint); font-weight: 600; }
+.sig-text { color: var(--ink-dim); }   /* второй слог логотипа — приглушённо-серый */
+
+/* ---------- слой приложения ---------- */
+.app-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.screen {
+  flex: 1;
+  padding: 24px 20px calc(var(--tab-h) + 28px);
+  max-width: 520px;
+  width: 100%;
+  margin: 0 auto;
+}
+.screen-pad-top { padding-top: max(24px, env(safe-area-inset-top)); }
+
+/* ---------- панель ---------- */
+.panel {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.panel::before {
+  content: "";
+  position: absolute; inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--hairline-2), transparent);
+}
+
+/* ---------- кнопки ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%;
+  padding: 16px 20px;
+  border: none;
+  border-radius: var(--r-md);
+  font-family: inherit; font-size: 16px; font-weight: 600;
+  background: #FFFFFF;
+  color: #09090B;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.2s ease;
+}
+.btn:active { transform: scale(0.975); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.btn-ghost { background: transparent; border: 1px solid var(--hairline-2); color: var(--ink); }
+.btn-danger { background: transparent; border: 1px solid var(--hairline-2); color: var(--ink-dim); }
+.btn-sm { width: auto; padding: 10px 16px; font-size: 14px; border-radius: var(--r-sm); }
+
+/* ---------- поля ---------- */
+.field {
+  width: 100%;
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  font-size: 16px; font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.field::placeholder { color: var(--ink-faint); }
+.field:focus { border-color: var(--hairline-2); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.07); }
+
+/* ---------- статус-пилл ---------- */
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px; font-weight: 600;
+  background: var(--bg-2);
+  border: 1px solid var(--hairline);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot-live { background: var(--live); animation: ping 2s ease-out infinite; }
+.dot-off  { background: var(--ink-faint); }
+@keyframes ping {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
+  70%  { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+
+/* ---------- аватар (тёмный, белые инициалы, тонкий контур) ---------- */
+.avatar {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  font-family: 'Unbounded', sans-serif; font-weight: 700;
+  color: var(--ink);
+  background: linear-gradient(160deg, #2A2A2E, #161618);
+  border: 1px solid var(--hairline-2);
+  flex: none;
+}
+
+/* ---------- таб-бар ---------- */
+.tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--tab-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex; align-items: stretch;
+  background: rgba(10, 10, 12, 0.85);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  border-top: 1px solid var(--hairline);
+  z-index: 100;
+}
+.tab {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  background: none; border: none;
+  color: var(--ink-faint);
+  cursor: pointer; position: relative;
+  transition: color 0.2s ease;
+}
+.tab[data-active="true"] { color: var(--ink); }   /* иконка берёт currentColor — видна на активной */
+.tab-ico { transition: transform 0.2s ease; }
+.tab[data-active="true"] .tab-ico { transform: translateY(-1px); }
+.tab-label { font-size: 11px; font-weight: 600; }
+.tab-mark {
+  position: absolute; top: 8px;
+  width: 20px; height: 3px; border-radius: 3px;
+  background: var(--ink);
+  opacity: 0; transform: scaleX(0.3);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.tab-mark { display: none; }
+.tab-badge {
+  position: absolute; top: 6px; left: calc(50% + 10px);
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--ink); color: #09090B;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ---------- входные анимации ---------- */
+.enter { animation: enter 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.stagger > * { animation: enter 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.03s; }
+.stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.stagger > *:nth-child(3) { animation-delay: 0.13s; }
+.stagger > *:nth-child(4) { animation-delay: 0.18s; }
+.stagger > *:nth-child(5) { animation-delay: 0.23s; }
+.stagger > *:nth-child(6) { animation-delay: 0.28s; }
+
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--ink);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- сканер: статичная рамка захвата (без пульсации) ---------- */
+/* Прячем оверлей «Scanner paused» от html5-qrcode (div без класса с этим фоном) */
+#qr-reader div[style*="rgba(9, 9, 9, 0.46)"] { display: none !important; }
+
+/* Рамка из уголков. При распознавании QR «захватывает» код — стягивается к центру. */
+.lock-frame { position: absolute; inset: 0; transform-origin: center; }
+.lock-frame.lock { animation: lock-snap 0.28s cubic-bezier(0.3, 0.9, 0.25, 1); }
+.lock-frame.lock .corner { animation: lock-glow 0.28s ease; }
+@keyframes lock-snap {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(0.78); }
+  100% { transform: scale(1); }
+}
+@keyframes lock-glow {
+  0%, 100% { border-color: rgba(255, 255, 255, 0.85); }
+  45%      { border-color: #fff; box-shadow: 0 0 12px rgba(255, 255, 255, 0.7); }
+}
+.corner { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.85); }
+.corner.tl { top: 42px; left: 42px; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
+.corner.tr { top: 42px; right: 42px; border-left: none; border-bottom: none; border-top-right-radius: 10px; }
+.corner.bl { bottom: 42px; left: 42px; border-right: none; border-top: none; border-bottom-left-radius: 10px; }
+.corner.br { bottom: 42px; right: 42px; border-left: none; border-top: none; border-bottom-right-radius: 10px; }
+
+/* вспышка — только в момент распознавания (ответ на действие) */
+.lock-burst { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.lock-burst span {
+  position: absolute; width: 22%; height: 22%; border-radius: 14px;
+  border: 2px solid #fff;
+  animation: burst 0.4s ease-out forwards;
+}
+@keyframes burst { 0% { width: 22%; height: 22%; opacity: 0.9; } 100% { width: 128%; height: 128%; opacity: 0; } }
+
+/* ---------- модалка результата ---------- */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fade 0.25s ease both;
+}
+.sheet {
+  width: 100%; max-width: 520px;
+  background: var(--bg-2);
+  border: 1px solid var(--hairline); border-bottom: none;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: 10px 20px calc(24px + env(safe-area-inset-bottom));
+  animation: sheet-up 0.38s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+.sheet-grab { width: 42px; height: 4px; border-radius: 4px; background: var(--hairline-2); margin: 6px auto 16px; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* ---------- toggle «отмечать» ---------- */
+.toggle {
+  width: 46px; height: 28px; border-radius: 999px;
+  background: var(--bg-2); border: 1px solid var(--hairline);
+  position: relative; cursor: pointer; flex: none;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.toggle[data-on="true"] { background: #FFFFFF; border-color: #FFFFFF; }
+.toggle::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--ink-faint);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s ease;
+}
+.toggle[data-on="true"]::after { transform: translateX(18px); background: #09090B; }
+
+/* ---------- сегмент ---------- */
+.segment {
+  display: flex; padding: 4px; gap: 4px;
+  background: var(--bg-2); border: 1px solid var(--hairline);
+  border-radius: 999px; position: relative;
+}
+.segment button {
+  flex: 1; padding: 11px; border: none; background: none; cursor: pointer;
+  color: var(--ink-dim); font-weight: 600; font-size: 14px; font-family: inherit;
+  border-radius: 999px; z-index: 1; transition: color 0.25s ease;
+}
+.segment button[data-active="true"] { color: #09090B; }
+.segment .thumb {
+  position: absolute; top: 4px; bottom: 4px; border-radius: 999px;
+  background: #FFFFFF;
+  transition: left 0.3s cubic-bezier(0.3, 0.8, 0.2, 1), width 0.3s ease;
+}
+
+.row { display: flex; align-items: center; gap: 12px; }
+.muted { color: var(--ink-dim); }
+.faint { color: var(--ink-faint); }
+.empty { text-align: center; color: var(--ink-faint); padding: 56px 20px; }
+
+::-webkit-scrollbar { width: 0; height: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}

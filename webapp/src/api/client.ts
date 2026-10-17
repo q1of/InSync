@@ -1,0 +1,125 @@
+const getInitData = (): string => {
+  if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
+    return (window as any).Telegram.WebApp.initData || '';
+  }
+  return '';
+};
+
+const BASE_URL = '/api';
+
+async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  const initData = getInitData();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Telegram-Init-Data': initData,
+  };
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    let errorMsg = 'Ошибка сервера';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || errorMsg;
+    } catch {}
+    throw new Error(errorMsg);
+  }
+
+  return response.json();
+}
+
+// Auth
+export const loginApi = (username: string, password: string) =>
+  api('POST', '/auth/login', { username, password });
+
+export const complete2faApi = (challengeId: string, code: string) =>
+  api('POST', '/auth/2fa', { challenge_id: challengeId, code });
+
+export const resend2faApi = (challengeId: string) =>
+  api<{ success: boolean; hint?: string }>('POST', '/auth/2fa/resend', { challenge_id: challengeId });
+
+export interface SessionStatus {
+  logged_in: boolean;
+  valid: boolean;
+  updated_at?: number | null;
+  expires_in_seconds?: number | null;
+  full_name?: string | null;
+  group_name?: string | null;
+  mirea_login?: string | null;
+}
+
+// check=false — быстрый ответ без запроса к pulse.mirea.ru
+export const getSessionApi = (check = true) =>
+  api<SessionStatus>('GET', `/auth/session?check=${check}`);
+
+export interface Lesson {
+  name: string; type: string; room: string; teacher: string;
+  subgroup: string; start_epoch: number | null; end_epoch: number | null;
+}
+export const getScheduleApi = (days = 7) =>
+  api<{ lessons: Lesson[] }>('GET', `/auth/schedule?days=${days}`);
+
+export const logoutApi = () =>
+  api('POST', '/auth/logout');
+
+// Attendance
+export interface MarkResult {
+  user_name: string;
+  telegram_id: number;
+  success: boolean;
+  error: string | null;
+  retriable: boolean;
+}
+export interface MarkResponse { results: MarkResult[]; total: number; successful: number; }
+
+// only — подмножество telegram_id (повтор только непрошедшим); scanId — склейка волн в истории
+export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scanId?: string }) =>
+  api<MarkResponse>('POST', '/attendance/mark', {
+    qr_data: qrData,
+    only: opts?.only ?? null,
+    scan_id: opts?.scanId ?? null,
+  });
+
+export interface ScanTarget { name: string; is_self: boolean; success: boolean; error: string | null; }
+export interface Scan { created_at: number; targets: ScanTarget[]; successful: number; total: number; }
+export const getHistoryApi = () =>
+  api<{ scans: Scan[] }>('GET', '/attendance/history');
+
+// Friends
+export interface Friend {
+  telegram_id: number;
+  name: string;
+  group: string | null;
+  session_alive: boolean;
+  marking_enabled: boolean;
+}
+export interface PendingReq {
+  telegram_id: number;
+  name: string;
+  group: string | null;
+  created_at: number;
+}
+export const getFriendsApi = () =>
+  api<Friend[]>('GET', '/friends/');
+
+export const sendFriendRequestApi = (identifier: string) =>
+  api('POST', '/friends/request', { identifier });
+
+export const getPendingApi = () =>
+  api<PendingReq[]>('GET', '/friends/pending');
+
+export const setMarkingApi = (friendTelegramId: number, enabled: boolean) =>
+  api('POST', '/friends/marking', { friend_telegram_id: friendTelegramId, enabled });
+
+export const acceptFriendApi = (requestId: number) =>
+  api('POST', '/friends/accept', { request_id: requestId });
+
+export const rejectFriendApi = (requestId: number) =>
+  api('POST', '/friends/reject', { request_id: requestId });
+
+export const removeFriendApi = (friendId: number) =>
+  api('DELETE', `/friends/${friendId}`);

@@ -1,0 +1,17 @@
+# systemd-сервис для backend InSync (FastAPI + Telegram-бот).
+# Копировать в /etc/systemd/system/insync.service, поправить пути/пользователя.
+[Unit]
+Description=InSync backend (FastAPI + Telegram bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=insync
+WorkingDirectory=/opt/insync
+ExecStart=/opt/insync/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
