@@ -129,6 +129,51 @@ docker run -d \
 
 ---
 
+## Бесплатный хостинг 24/7 (Oracle Cloud Always Free)
+
+Telegram-бот работает по **long polling** — нужен постоянно живой процесс.
+Поэтому serverless и «засыпающие» бесплатные тарифы не подходят:
+
+| Платформа               | Почему не годится для бота                          |
+|-------------------------|-----------------------------------------------------|
+| Cloudflare Workers/Pages| serverless, нет постоянного процесса и Python-рантайма |
+| Google Cloud Run        | масштабируется в ноль — polling прерывается          |
+| Render / Railway (free) | засыпают при простое — бот отваливается              |
+| **Oracle Cloud Always Free** | **настоящая всегда-бесплатная VM, Docker, без засыпания** ✅ |
+
+### Шаги
+
+1. **Создайте Always Free VM** в [Oracle Cloud](https://www.oracle.com/cloud/free/):
+   Compute → Instance, образ **Ubuntu 22.04**, shape **VM.Standard.A1.Flex** (Ampere, Always Free).
+2. **Откройте порт** приложения: в Security List подсети разрешите входящий TCP на `8888`
+   (и на самой VM: `sudo iptables -I INPUT -p tcp --dport 8888 -j ACCEPT` или через `ufw`).
+3. **Установите Docker и git**, склонируйте проект:
+   ```bash
+   sudo apt update && sudo apt install -y docker.io git
+   sudo usermod -aG docker "$USER" && newgrp docker
+   git clone https://github.com/yohjidev/InSync.git && cd InSync
+   ```
+4. **Заполните окружение** и запустите деплой (backend + web, автоперезапуск):
+   ```bash
+   cp backend/.env.example backend/.env
+   nano backend/.env            # BOT_TOKEN, WEBAPP_URL, SESSION_KEYS (+ MIREA_PROXY при необходимости)
+   bash deploy/deploy.sh        # поднимет оба контейнера; публичный порт 8888
+   ```
+5. **Пропишите адрес** `http://<IP-VM>:8888` (или свой домен с HTTPS) в `WEBAPP_URL`
+   и в настройках Mini App у [@BotFather](https://t.me/BotFather).
+
+> `deploy/deploy.sh` собирает и запускает `insync-backend` и `insync-web` в общей
+> docker-сети `insync-net` с `--restart unless-stopped` — после краша/перезагрузки
+> контейнеры поднимаются сами. Сменить публичный порт: `PORT=80 bash deploy/deploy.sh`.
+
+> ⚠️ Telegram Mini App требует **HTTPS**. Для боевого домена поставьте перед `:8888`
+> reverse-proxy с сертификатом (Caddy/nginx + Let's Encrypt) или Cloudflare Tunnel.
+
+> ⚠️ С зарубежной VM `pulse.mirea.ru` часто недоступен — укажите российский
+> `MIREA_PROXY` в `backend/.env` (socks5/http). Проект это поддерживает из коробки.
+
+---
+
 ## Локальная разработка (без Docker)
 
 **Backend** (Python 3.13, из корня проекта):
