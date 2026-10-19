@@ -13,6 +13,8 @@ async def get_db():
     """
     conn = await aiosqlite.connect(settings.database_path)
     conn.row_factory = aiosqlite.Row
+    # Ждать до 5с на заблокированной БД вместо мгновенной ошибки "database is locked".
+    await conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
     finally:

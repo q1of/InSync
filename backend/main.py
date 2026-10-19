@@ -234,6 +234,43 @@ def _setup_logging() -> None:
     root.addHandler(console)
 
 
+# --- Защита от второго экземпляра бота (иначе Telegram Conflict: getUpdates) ---
+_bot_lock_handle = None
+
+
+def _acquire_bot_lock() -> bool:
+    """Эксклюзивная файловая блокировка — бот должен работать в одном экземпляре.
+
+    True  — блокировка получена, можно запускать polling;
+    False — другой процесс InSync уже держит её, polling запускать нельзя.
+    ОС освобождает блокировку автоматически, когда процесс завершается.
+    """
+    global _bot_lock_handle
+    import os as _os
+    import sys as _sys
+
+    lock_dir = _os.path.dirname(settings.database_path) or "."
+    _os.makedirs(lock_dir, exist_ok=True)
+    lock_path = _os.path.join(lock_dir, "insync.bot.lock")
+    try:
+        handle = open(lock_path, "a+")
+        if _sys.platform == "win32":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        try:
+            handle.close()
+        except Exception:
+            pass
+        return False
+    _bot_lock_handle = handle   # держим файл открытым — блокировка жива, пока жив процесс
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle: инициализация БД при старте."""
@@ -244,11 +281,18 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Запуск бота в фоне (polling)
+    # Запуск бота в фоне (polling) — только если мы единственный экземпляр
     bot_task = None
     if bot:
-        bot_task = asyncio.create_task(dp.start_polling(bot))
-        logger.info("Telegram bot polling started")
+        if _acquire_bot_lock():
+            bot_task = asyncio.create_task(dp.start_polling(bot))
+            logger.info("Telegram bot polling started")
+        else:
+            logger.warning(
+                "Бот уже запущен в другом процессе InSync — polling пропущен "
+                "(иначе Telegram вернёт Conflict: terminated by other getUpdates). "
+                "API при этом работает нормально."
+            )
 
     yield
 
@@ -257,6 +301,11 @@ async def lifespan(app: FastAPI):
         bot_task.cancel()
     if bot:
         await bot.session.close()
+    if _bot_lock_handle:
+        try:
+            _bot_lock_handle.close()   # освобождаем блокировку бота
+        except Exception:
+            pass
     logger.info("InSync backend stopped")
 
 

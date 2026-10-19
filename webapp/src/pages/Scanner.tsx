@@ -27,8 +27,13 @@ function qrToken(text: string): string | null {
 }
 
 type Status = 'pending' | 'marking' | 'done' | 'failed';
-interface Target { id: number; name: string; is_self: boolean; status: Status; error?: string | null; }
+interface Target { id: number; name: string; is_self: boolean; status: Status; error?: string | null; attempts: number; }
 type SessionState = 'idle' | 'active' | 'done';
+
+// Сессию считаем «мёртвой» (нужен перезаход), только если человеку пришло
+// больше стольких неудачных запросов. Временные причины (ретраибл) повторяются
+// без этого лимита.
+const MAX_DEAD_ATTEMPTS = 3;
 
 interface Props { active: boolean }
 
@@ -63,8 +68,8 @@ export function Scanner({ active }: Props) {
   }, []);
 
   const buildTargets = (): Target[] => {
-    const self: Target = { id: user?.id ?? 0, name: user?.first_name || 'Ты', is_self: true, status: 'pending' };
-    const fr: Target[] = enabledFriends.map((f) => ({ id: f.telegram_id, name: f.name, is_self: false, status: 'pending' }));
+    const self: Target = { id: user?.id ?? 0, name: user?.first_name || 'Ты', is_self: true, status: 'pending', attempts: 0 };
+    const fr: Target[] = enabledFriends.map((f) => ({ id: f.telegram_id, name: f.name, is_self: false, status: 'pending', attempts: 0 }));
     return [self, ...fr];
   };
 
@@ -80,9 +85,15 @@ export function Scanner({ active }: Props) {
         ts.map((t) => {
           if (!ids.includes(t.id)) return t;
           const r = byId.get(t.id);
-          if (!r) return { ...t, status: 'failed', error: 'Нужно перезайти' };
-          if (r.success) return { ...t, status: 'done', error: null };
-          return { ...t, status: r.retriable ? 'pending' : 'failed', error: r.error };
+          if (r?.success) return { ...t, status: 'done', error: null };
+          // Временная причина (сеть, «пара не началась») — повторяем без лимита.
+          if (r?.retriable) return { ...t, status: 'pending', error: r.error };
+          // Мёртвая/неизвестная причина (нет ответа или «нужно перезайти»):
+          // считаем попытку и сдаёмся, только когда их стало больше MAX_DEAD_ATTEMPTS.
+          const attempts = t.attempts + 1;
+          const error = r ? r.error : 'Нужно перезайти';
+          if (attempts > MAX_DEAD_ATTEMPTS) return { ...t, status: 'failed', error, attempts };
+          return { ...t, status: 'pending', error, attempts };
         }),
       );
     } catch {

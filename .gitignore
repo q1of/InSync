@@ -11,8 +11,9 @@ webapp/.vite/
 # Секреты
 backend/.env
 
-# Локальные данные (БД, логи, отладочные дампы входа)
+# Локальные данные (БД, логи, блокировка бота, отладочные дампы входа)
 data/*.db
 data/*.log
+data/*.lock
 data/sso_debug_*.html
 data/sso_trace_*.json
