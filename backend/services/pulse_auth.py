@@ -51,6 +51,7 @@ _OTP_PAGES = {
     "email-code-form": ("emailCode", "email_code"),
     "login-otp": ("otp", "otp"),
     "login-otp.ftl": ("otp", "otp"),
+    "login-max-otp": ("otp", "max"),     # ввод кода из приложения MAX
 }
 
 
@@ -164,6 +165,8 @@ def code_hint(challenge: Challenge) -> str:
         if challenge.masked_email:
             return f"Код отправлен на почту {challenge.masked_email}"
         return "Код отправлен на вашу почту @edu.mirea.ru"
+    if challenge.kind == "max":
+        return "Введите код из приложения MAX"
     return "Введите код из приложения-аутентификатора"
 
 
@@ -267,7 +270,9 @@ class PulseLogin:
         # и идём дальше. Иначе вход зацикливается: эта страница не приём кода, а push в MAX.
         url_s = str(resp.url)
         page = (_page_id(html) or "")
-        is_max_setup = ("max-account-config" in url_s) or (page == "login-max-otp")
+        # Пропускаем ТОЛЬКО необязательную настройку MAX-аккаунта (max-account-config).
+        # login-max-otp — это ввод кода из MAX, его НЕ скипаем, а показываем как форму кода.
+        is_max_setup = "max-account-config" in url_s
         if is_max_setup:
             action = _kc_login_action(html, url_s)
             if action and self._skip_count < 3:

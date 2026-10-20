@@ -7,9 +7,14 @@
 import base64
 
 from backend.services.mirea_client import extract_qr_token, SessionCrypto
+from backend.services.pulse_auth import _otp_challenge, code_hint
 from backend.routes.attendance import _is_retriable
 
 UUID = "12345678-1234-1234-1234-123456789abc"
+
+
+def _kc_html(page_id: str, action: str = "https://sso.mirea.ru/x/authenticate?session_code=abc") -> str:
+    return '<script>window.kc={"pageId":"%s","loginAction":"%s"};</script>' % (page_id, action)
 
 
 class TestExtractQrToken:
@@ -54,6 +59,25 @@ class TestSessionCrypto:
         key = base64.urlsafe_b64encode(b"x" * 32).decode()
         c = SessionCrypto(key)
         assert c.decrypt(c.encrypt({"k": "v"})) == {"k": "v"}
+
+
+class TestOtpChallenge:
+    def test_max_otp_is_code_form(self):
+        # login-max-otp теперь распознаётся как форма ввода кода из MAX (а не «скип»).
+        ch = _otp_challenge(_kc_html("login-max-otp"), "https://sso.mirea.ru/x")
+        assert ch is not None
+        assert ch.field_name == "otp"
+        assert ch.kind == "max"
+        assert code_hint(ch) == "Введите код из приложения MAX"
+
+    def test_email_code_form(self):
+        ch = _otp_challenge(_kc_html("email-code-form"), "https://sso.mirea.ru/x")
+        assert ch is not None
+        assert ch.field_name == "emailCode"
+        assert ch.kind == "email_code"
+
+    def test_non_otp_page(self):
+        assert _otp_challenge(_kc_html("login-username"), "https://sso.mirea.ru/x") is None
 
 
 class TestIsRetriable:
