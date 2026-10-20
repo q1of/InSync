@@ -1,0 +1,3 @@
+# Зависимости для тестов: venv/bin/pip install -r backend/requirements-dev.txt
+-r requirements.txt
+pytest>=8

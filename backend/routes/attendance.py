@@ -11,6 +11,22 @@ from backend.database import get_db
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
 
+async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict]) -> None:
+    """Шлёт в Telegram уведомление каждому успешно отмеченному другу (не себе)."""
+    from backend.main import bot  # ленивый импорт — избегаем циклической зависимости
+    if not bot:
+        return
+    for r in raw_results:
+        if r.get("success") and r["telegram_id"] != user.telegram_id:
+            try:
+                await bot.send_message(
+                    r["telegram_id"],
+                    f"✅ Вас отметили на паре через InSync.\nОтметил: {user.display_name}",
+                )
+            except Exception:
+                pass
+
+
 def _is_retriable(success: bool, error: str | None) -> bool:
     """Стоит ли повторять на следующем QR.
 
@@ -79,6 +95,9 @@ async def mark_attendance(
                      r["success"], r.get("error")),
                 )
         await db.commit()
+
+    # Уведомляем отмеченных друзей в Telegram (себя не трогаем)
+    await _notify_marked_friends(user, raw_results)
 
     results = [
         AttendanceResult(

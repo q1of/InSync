@@ -124,8 +124,8 @@ export function Scanner({ active }: Props) {
 
     // Визуальный «захват» на каждый новый QR
     hapticRef.current?.impactOccurred?.('light');
-    setLocked(true); setTimeout(() => setLocked(false), 280);
-    setBurst(true); setTimeout(() => setBurst(false), 420);
+    setLocked(true); setTimeout(() => setLocked(false), 450);
+    setBurst(true); setTimeout(() => setBurst(false), 500);
 
     if (sessionRef.current === 'idle') {
       const list = buildTargets();

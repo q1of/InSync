@@ -501,7 +501,14 @@ async def get_schedule(session_cookies: dict, days: int = 7) -> list[dict]:
 # ------- Отметка посещаемости -------
 
 def extract_qr_token(qr_data: str) -> str | None:
-    """Достаёт token из QR: URL ...?token=UUID или сам UUID."""
+    """Достаёт token (UUID) из QR.
+
+    Поддерживает три формата:
+      * URL с ?token=UUID / &token=UUID;
+      * сам UUID строкой;
+      * UUID где угодно в URL, в т.ч. в пути (напр. .../self-approve/<uuid>) —
+        именно так выглядит QR Пульса, поэтому без этого отметка не распознавалась.
+    """
     if not qr_data:
         return None
     s = qr_data.strip()
@@ -510,6 +517,11 @@ def extract_qr_token(qr_data: str) -> str | None:
         return m.group(1)
     if _UUID_RE.match(s):
         return s
+    m2 = re.search(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", s
+    )
+    if m2:
+        return m2.group(0)
     return None
 
 

@@ -240,16 +240,18 @@ h1, h2, h3, .display {
 
 /* Рамка из уголков. При распознавании QR «захватывает» код — стягивается к центру. */
 .lock-frame { position: absolute; inset: 0; transform-origin: center; }
-.lock-frame.lock { animation: lock-snap 0.28s cubic-bezier(0.3, 0.9, 0.25, 1); }
-.lock-frame.lock .corner { animation: lock-glow 0.28s ease; }
+.lock-frame.lock { animation: lock-snap 0.45s cubic-bezier(0.3, 1.1, 0.3, 1); }
+.lock-frame.lock .corner { animation: lock-glow 0.45s ease; }
+/* «захват»: уголки резко сжимаются к QR, чуть перелетают и фиксируются */
 @keyframes lock-snap {
   0%   { transform: scale(1); }
-  45%  { transform: scale(0.78); }
+  40%  { transform: scale(0.72); }
+  70%  { transform: scale(1.04); }
   100% { transform: scale(1); }
 }
 @keyframes lock-glow {
-  0%, 100% { border-color: rgba(255, 255, 255, 0.85); }
-  45%      { border-color: #fff; box-shadow: 0 0 12px rgba(255, 255, 255, 0.7); }
+  0%, 100% { border-color: rgba(255, 255, 255, 0.85); box-shadow: none; }
+  40%      { border-color: var(--live); box-shadow: 0 0 16px var(--live); }
 }
 .corner { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.85); }
 .corner.tl { top: 42px; left: 42px; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
