@@ -272,12 +272,15 @@ class PulseLogin:
         err = _kc_error(html)
         ch = _otp_challenge(html, url_s)
         if ch:
-            # На странице кода бывает и текст ошибки (неверный код) — покажем его
+            # На странице кода бывает и текст ошибки (неверный код) — покажем его.
+            # pageId логируем на WARNING — чтобы при отказе сразу видеть, что за форма.
             if err and step == "code":
-                logger.warning("Код отклонён МИРЭА: %s", err)
+                logger.warning("Код отклонён МИРЭА (pageId=%s, поле=%s): %s",
+                               _page_id(html), ch.field_name, err)
                 self._last_challenge = ch
                 return LoginOutcome(error=err, challenge=ch)
-            logger.info("Нужен код подтверждения (%s), поле '%s'", ch.kind, ch.field_name)
+            logger.warning("Форма кода 2FA: pageId=%s, поле=%s, kind=%s",
+                           _page_id(html), ch.field_name, ch.kind)
             self._last_challenge = ch
             return LoginOutcome(challenge=ch)
 
@@ -327,9 +330,15 @@ class PulseLogin:
         return await self._analyze(resp, "password")
 
     async def submit_code(self, challenge: Challenge, code: str) -> LoginOutcome:
-        logger.info("Отправка кода подтверждения (поле %s)", challenge.field_name)
+        code = code.strip()
         payload = dict(challenge.hidden_fields)
-        payload[challenge.field_name] = code.strip()
+        # Код шлём сразу под всеми распространёнными именами поля: Keycloak возьмёт то,
+        # что ждёт его текущая форма (email / MAX / аутентификатор), остальные проигнорит.
+        # Так вход работает одинаково, каким бы каналом код ни пришёл.
+        for fname in (challenge.field_name, "emailCode", "otp", "code", "totp", "smsCode"):
+            if fname:
+                payload.setdefault(fname, code)
+        logger.info("Отправка кода подтверждения (поля: %s)", ", ".join(payload))
         try:
             resp = await self.client.post(
                 challenge.action_url, data=payload,
