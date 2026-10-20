@@ -51,7 +51,6 @@ _OTP_PAGES = {
     "email-code-form": ("emailCode", "email_code"),
     "login-otp": ("otp", "otp"),
     "login-otp.ftl": ("otp", "otp"),
-    "login-max-otp": ("otp", "max"),     # ввод кода из приложения MAX
 }
 
 
@@ -165,8 +164,6 @@ def code_hint(challenge: Challenge) -> str:
         if challenge.masked_email:
             return f"Код отправлен на почту {challenge.masked_email}"
         return "Код отправлен на вашу почту @edu.mirea.ru"
-    if challenge.kind == "max":
-        return "Введите код из приложения MAX"
     return "Введите код из приложения-аутентификатора"
 
 
@@ -269,29 +266,8 @@ class PulseLogin:
         # Необязательная настройка MAX (max-account-config / login-max-otp) — жмём «Skip»
         # и идём дальше. Иначе вход зацикливается: эта страница не приём кода, а push в MAX.
         url_s = str(resp.url)
-        page = (_page_id(html) or "")
-        # Пропускаем ТОЛЬКО необязательную настройку MAX-аккаунта (max-account-config).
-        # login-max-otp — это ввод кода из MAX, его НЕ скипаем, а показываем как форму кода.
-        is_max_setup = "max-account-config" in url_s
-        if is_max_setup:
-            action = _kc_login_action(html, url_s)
-            if action and self._skip_count < 3:
-                self._skip_count += 1
-                logger.info("Пропускаю настройку MAX (skip, попытка %d)", self._skip_count)
-                try:
-                    r2 = await self.client.post(
-                        action, data={"skip": "true", "retry": ""},
-                        headers={"Referer": url_s, "Origin": SSO,
-                                 "Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                except httpx.HTTPError as e:
-                    logger.error("Ошибка при пропуске настройки MAX: %s", e)
-                    return LoginOutcome(error=f"МИРЭА не ответила: {type(e).__name__}")
-                return await self._analyze(r2, step + "_skipmax")
-            logger.error("Не удалось пропустить настройку MAX (дамп в %s)", DEBUG_DIR)
-            return LoginOutcome(error="Для входа МИРЭА требует подтверждение через приложение MAX. "
-                                      "Войдите один раз в официальный Пульс (pulse.mirea.ru) и завершите/пропустите "
-                                      "настройку MAX, затем вернитесь в InSync.")
+        # Никакой особой обработки MAX. Код из MAX приходит и вводится так же, как
+        # код с почты — через обычную форму кода (её ловит _otp_challenge ниже).
 
         err = _kc_error(html)
         ch = _otp_challenge(html, url_s)

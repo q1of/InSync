@@ -62,13 +62,11 @@ class TestSessionCrypto:
 
 
 class TestOtpChallenge:
-    def test_max_otp_is_code_form(self):
-        # login-max-otp теперь распознаётся как форма ввода кода из MAX (а не «скип»).
+    def test_max_otp_is_generic_code_form(self):
+        # Никакой спец-обработки MAX: login-max-otp ловится как обычная форма кода.
         ch = _otp_challenge(_kc_html("login-max-otp"), "https://sso.mirea.ru/x")
         assert ch is not None
         assert ch.field_name == "otp"
-        assert ch.kind == "max"
-        assert code_hint(ch) == "Введите код из приложения MAX"
 
     def test_email_code_form(self):
         ch = _otp_challenge(_kc_html("email-code-form"), "https://sso.mirea.ru/x")
