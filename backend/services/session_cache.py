@@ -35,7 +35,11 @@ class SessionCache:
             return session.decrypted_cookies
 
     async def set_session(self, telegram_id: int, encrypted: str) -> None:
-        """Расшифровывает и кеширует сессию."""
+        """Расшифровывает и кеширует сессию (пропускает, если уже свежо в кеше)."""
+        async with self._lock:
+            s = self._cache.get(telegram_id)
+            if s and time.time() - s.loaded_at <= CACHE_EXPIRY_SECONDS:
+                return  # свежая запись уже есть — не тратим время на расшифровку
         try:
             cookies = decrypt_session(encrypted)
             async with self._lock:

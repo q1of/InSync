@@ -154,12 +154,16 @@ export function Scanner({ active }: Props) {
       try {
         const { Html5Qrcode } = await import('html5-qrcode');
         if (cancelled) return;
-        const scanner = new Html5Qrcode('qr-reader', { verbose: false } as any);
+        const scanner = new Html5Qrcode('qr-reader', {
+          verbose: false,
+          // нативный BarcodeDetector (железное декодирование) — читает QR в разы быстрее
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        } as any);
         scannerRef.current = scanner;
         await scanner.start(
-          // просим максимально чёткое видео — лучше читается QR
+          // чёткое видео — лучше и быстрее читается QR
           { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } as any,
-          { fps: 15, aspectRatio: 1 },   // без qrbox — рамку рисуем свою
+          { fps: 25, aspectRatio: 1, disableFlip: true },   // без qrbox — рамку рисуем свою
           handleDecode,
           () => {},
         );
