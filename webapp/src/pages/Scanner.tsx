@@ -45,6 +45,8 @@ export function Scanner({ active }: Props) {
   const [burst, setBurst] = useState(false);
   const [locked, setLocked] = useState(false);
   const [hint, setHint] = useState('');
+  const [zoom, setZoom] = useState(1);
+  const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
 
   const scannerRef = useRef<Html5QrcodeType | null>(null);
   const activeRef = useRef(active);
@@ -155,11 +157,19 @@ export function Scanner({ active }: Props) {
         const scanner = new Html5Qrcode('qr-reader', { verbose: false } as any);
         scannerRef.current = scanner;
         await scanner.start(
-          { facingMode: 'environment' },
-          { fps: 20, aspectRatio: 1 },   // без qrbox — рамку рисуем свою
+          // просим максимально чёткое видео — лучше читается QR
+          { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } as any,
+          { fps: 15, aspectRatio: 1 },   // без qrbox — рамку рисуем свою
           handleDecode,
           () => {},
         );
+        // Если камера поддерживает оптический зум — включаем ползунок
+        try {
+          const caps: any = (scanner as any).getRunningTrackCapabilities?.();
+          if (caps?.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > (caps.zoom.min ?? 1)) {
+            setZoomCaps({ min: caps.zoom.min ?? 1, max: caps.zoom.max, step: caps.zoom.step || 0.1 });
+          }
+        } catch {}
       } catch (e) {
         console.error(e);
       }
@@ -195,6 +205,11 @@ export function Scanner({ active }: Props) {
     getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
   };
 
+  const applyZoom = (z: number) => {
+    setZoom(z);
+    (scannerRef.current as any)?.applyVideoConstraints?.({ advanced: [{ zoom: z }] }).catch(() => {});
+  };
+
   const crew = enabledFriends.length;
   const doneCount = targets.filter((t) => t.status === 'done').length;
   const today = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -210,7 +225,7 @@ export function Scanner({ active }: Props) {
       {/* Камера как «цель захвата сигнала» */}
       <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-xl)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
         <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
-        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 2 }}>
           <div class={'lock-frame' + (locked ? ' lock' : '')}>
             <div class="corner tl" /><div class="corner tr" /><div class="corner bl" /><div class="corner br" />
           </div>
@@ -220,6 +235,16 @@ export function Scanner({ active }: Props) {
           <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, padding: '11px 14px', borderRadius: 'var(--r-sm)',
             background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', textAlign: 'center', fontSize: 14, fontWeight: 600 }}>
             {hint}
+          </div>
+        )}
+        {zoomCaps && (
+          <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12, display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', pointerEvents: 'auto', zIndex: 3 }}>
+            <span style={{ fontSize: 13, opacity: 0.85 }}>Зум</span>
+            <input type="range" min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step} value={zoom}
+              onInput={(e) => applyZoom(parseFloat((e.target as HTMLInputElement).value))}
+              style={{ flex: 1, accentColor: 'var(--live)' }} />
+            <span style={{ fontSize: 12, opacity: 0.7, minWidth: 30, textAlign: 'right' }}>{zoom.toFixed(1)}×</span>
           </div>
         )}
       </div>

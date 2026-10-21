@@ -16,7 +16,7 @@ function initials(name?: string | null) {
 interface Day { key: string; label: string; count: number; ts: number; }
 
 export function Profile({ onLogout }: Props) {
-  const { user, haptic } = useTelegram();
+  const { user, haptic, webApp } = useTelegram();
   const [session, setSession] = useState<SessionStatus | null>(null);
   const [days, setDays] = useState<Day[] | null>(null);
 
@@ -44,10 +44,20 @@ export function Profile({ onLogout }: Props) {
     return [...map.values()].filter((d) => d.ts >= today).sort((a, b) => a.ts - b.ts).slice(0, 4);
   };
 
-  const logout = async () => {
+  const doLogout = async () => {
     haptic?.impactOccurred?.('medium');
     try { await logoutApi(); } catch {}
     onLogout();
+  };
+
+  // Подтверждение выхода: нативный поп-ап Telegram, иначе обычный confirm
+  const logout = () => {
+    const msg = 'Вы уверены, что хотите выйти из аккаунта?';
+    if (webApp?.showConfirm) {
+      webApp.showConfirm(msg, (ok: boolean) => { if (ok) doLogout(); });
+    } else if (confirm(msg)) {
+      doLogout();
+    }
   };
 
   const name = session?.full_name || user?.first_name || 'Студент';
