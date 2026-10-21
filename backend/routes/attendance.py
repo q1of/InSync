@@ -96,8 +96,10 @@ async def mark_attendance(
                 )
         await db.commit()
 
-    # Уведомляем отмеченных друзей в Telegram (себя не трогаем)
-    await _notify_marked_friends(user, raw_results)
+    # Уведомляем отмеченных друзей в Telegram в ФОНЕ — чтобы не задерживать
+    # ответ на отметку (иначе сканер «лагает», ожидая отправку сообщений).
+    import asyncio
+    asyncio.create_task(_notify_marked_friends(user, raw_results))
 
     results = [
         AttendanceResult(
