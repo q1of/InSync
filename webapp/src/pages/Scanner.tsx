@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
 import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi } from '../api/client';
 import type { Friend } from '../api/client';
-import { IconCheck, IconX, IconScan, IconCamera, IconUsers } from '../components/icons';
+import { IconCheck, IconX, IconScan, IconCamera, IconUsers, IconQr } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -325,12 +325,12 @@ export function Scanner({ active }: Props) {
               <div style={{ padding: '26px 22px 26px' }}>
                 <div style={{ display: 'grid', placeItems: 'center' }}>
                   <div class="hero-tile" style={{ width: 68, height: 68, borderRadius: 20, animation: 'none' }}>
-                    <IconScan size={32} stroke={1.8} />
+                    <IconQr size={32} stroke={1.9} />
                   </div>
                 </div>
-                <h2 style={{ fontSize: 24, textAlign: 'center', marginTop: 22 }}>Лови момент. И&nbsp;QR.</h2>
+                <h2 style={{ fontSize: 24, textAlign: 'center', marginTop: 22 }}>Отметься одним сканом</h2>
                 <p class="muted" style={{ textAlign: 'center', fontSize: 14.5, lineHeight: 1.5, margin: '10px auto 0', maxWidth: 280 }}>
-                  Открой камеру и наведи её на код пары.
+                  Наведи камеру на QR-код пары — остальное сделаем мы.
                 </p>
                 <div class="row" style={{ justifyContent: 'center', gap: 7, marginTop: 16 }}>
                   <IconUsers size={15} color="var(--ink-faint)" />

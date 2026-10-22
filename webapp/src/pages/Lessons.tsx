@@ -85,7 +85,7 @@ export function Lessons() {
       </div>
 
       {tab === 'schedule' && (
-        <div class="enter">
+        <div class="enter" style={{ fontFamily: "'Manrope', system-ui, sans-serif" }}>
           {lessons == null ? (
             <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>
           ) : days.length === 0 ? (
