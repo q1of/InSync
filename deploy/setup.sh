@@ -49,6 +49,11 @@ if grep -q '^SESSION_KEYS=base64' backend/.env || ! grep -q '^SESSION_KEYS=.\+' 
   sed -i "s|^SESSION_KEYS=.*|SESSION_KEYS=${KEY}|" backend/.env
 fi
 printf 'Домен (направь его на IP этого сервера заранее), напр. innsync.duckdns.org: '; read -r DOMAIN </dev/tty
+if printf '%s' "${DOMAIN:-}" | grep -qE '^[0-9.]+$'; then
+  echo "❌ Это IP, а не домен. Для HTTPS нужен ДОМЕН, указывающий на этот сервер"
+  echo "   (напр. innsync.duckdns.org -> IP сервера). По IP Let's Encrypt сертификат не выдаст."
+  exit 1
+fi
 sed -i "s|^WEBAPP_URL=.*|WEBAPP_URL=https://${DOMAIN}|" backend/.env
 
 say "Python-зависимости backend"
