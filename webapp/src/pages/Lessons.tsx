@@ -143,23 +143,27 @@ function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
       {open && (
         <div style={{ padding: '0 10px 10px' }}>
           {day.lessons.map((l) => {
-            const isOff = offSet.has(l.start_epoch || 0);
+            const markable = isMarkable(l.type);          // отмечаемся только на лекциях
+            const isOff = markable && offSet.has(l.start_epoch || 0);
             return (
               <div key={l.start_epoch} class="row" style={{ alignItems: 'stretch', gap: 12, padding: '11px 6px',
-                borderTop: '1px solid var(--hairline)', opacity: isOff ? 0.55 : 1 }}>
+                borderTop: '1px solid var(--hairline)', opacity: isOff ? 0.5 : 1 }}>
                 <div style={{ width: 52, flex: 'none', textAlign: 'right', paddingTop: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 14.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
                   <div class="faint" style={{ fontSize: 12 }}>{fmtTime(l.end_epoch)}</div>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3 }}>{l.name}</div>
-                  <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
-                    {[l.type, l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
+                  <div class="row" style={{ gap: 7, alignItems: 'baseline' }}>
+                    <TypeTag type={l.type} />
+                    <span style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                   </div>
-                  {isOff && <div style={{ fontSize: 12, marginTop: 4, color: 'var(--warn)' }}>не отмечаюсь на этой паре</div>}
+                  <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
+                    {[l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
+                  </div>
                 </div>
-                <div class="toggle" data-on={isOff} onClick={() => onToggleOptout(l)}
-                     title="Не отмечаться на этой паре" style={{ alignSelf: 'center', flex: 'none' }} />
+                {markable
+                  ? <OptoutChip on={isOff} onClick={() => onToggleOptout(l)} />
+                  : <span class="faint" style={{ alignSelf: 'center', flex: 'none', fontSize: 11, textAlign: 'right', lineHeight: 1.3, maxWidth: 74 }}>отмечает преподаватель</span>}
               </div>
             );
           })}
@@ -174,4 +178,47 @@ function plural(n: number, one: string, few: string, many: string): string {
   if (m10 === 1 && m100 !== 11) return one;
   if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
   return many;
+}
+
+// Классификация пары по типу из Пульса.
+const isLecture = (t?: string) => /лекц|^лк$|lect/i.test((t || '').trim());
+const isPractice = (t?: string) => /практ|^пр$|^пз$/i.test((t || '').trim());
+const isLab = (t?: string) => /лаб|^лр$/i.test((t || '').trim());
+// Самоотметка по QR только на лекциях; практику/лаб отмечает преподаватель.
+const isMarkable = (t?: string) => !isPractice(t) && !isLab(t);
+
+function shortType(t?: string): string {
+  if (isLecture(t)) return 'ЛК';
+  if (isPractice(t)) return 'ПР';
+  if (isLab(t)) return 'ЛАБ';
+  return (t || '').trim().slice(0, 6).toUpperCase();
+}
+
+function TypeTag({ type }: { type?: string }) {
+  const lect = isLecture(type);
+  const label = shortType(type);
+  if (!label) return null;
+  return (
+    <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, padding: '2px 6px',
+      borderRadius: 6, lineHeight: 1,
+      background: lect ? 'var(--live-dim)' : 'var(--bg-2)',
+      color: lect ? 'var(--live)' : 'var(--ink-faint)' }}>
+      {label}
+    </span>
+  );
+}
+
+// Неброский чип вместо тумблера: по умолчанию почти незаметен, становится
+// виден, только когда пара отключена.
+function OptoutChip({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title="Не отмечаться на этой паре"
+      style={{ alignSelf: 'center', flex: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600,
+        padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+        border: '1px solid ' + (on ? 'var(--warn)' : 'var(--hairline)'),
+        background: 'transparent', color: on ? 'var(--warn)' : 'var(--ink-faint)',
+        opacity: on ? 1 : 0.55 }}>
+      {on ? 'не отмечаюсь' : 'отмечаюсь'}
+    </button>
+  );
 }
