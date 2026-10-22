@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getSessionApi, getScheduleApi, logoutApi, SessionStatus, Lesson } from '../api/client';
 import { useTelegram } from '../hooks/useTelegram';
-import { IconLogout, IconCalendar } from '../components/icons';
+import { IconLogout, IconCalendar, IconX, IconCheck } from '../components/icons';
 
 interface Props { onLogout: () => void; }
 
@@ -19,6 +19,7 @@ export function Profile({ onLogout }: Props) {
   const { user, haptic, webApp } = useTelegram();
   const [session, setSession] = useState<SessionStatus | null>(null);
   const [days, setDays] = useState<Day[] | null>(null);
+  const [privacy, setPrivacy] = useState(false);
 
   useEffect(() => {
     getSessionApi(true).then(setSession).catch(() => {});
@@ -111,6 +112,57 @@ export function Profile({ onLogout }: Props) {
       <button class="btn btn-danger" onClick={logout}>
         <IconLogout size={18} /> Выйти
       </button>
+
+      <div style={{ textAlign: 'center', marginTop: 18 }}>
+        <button onClick={() => { haptic?.selectionChanged?.(); setPrivacy(true); }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)',
+            fontSize: 12, textDecoration: 'underline', textUnderlineOffset: 3, padding: 6, fontFamily: 'inherit' }}>
+          Конфиденциальность
+        </button>
+      </div>
+
+      {privacy && <PrivacyModal onClose={() => setPrivacy(false)} />}
+    </div>
+  );
+}
+
+function PrivacyModal({ onClose }: { onClose: () => void }) {
+  const points = [
+    'Логин и пароль вводятся на странице входа и уходят напрямую в МИРЭА (Пульс). InSync их не хранит и не видит.',
+    'Мы храним только зашифрованную сессию Пульса — она нужна, чтобы отмечать вас на парах по QR.',
+    'Сессия используется только для: проверки входа, загрузки вашего расписания и отметки посещаемости — за вас и за друзей, которых вы сами включили.',
+    'Друзья видят только ваше имя из Telegram и учебную группу. Отметить вас может лишь тот, кого вы добавили и включили.',
+    'Мы не передаём ваши данные третьим лицам и не используем их ни для чего, кроме отметок.',
+    'Кнопка «Выйти» удаляет сессию с сервера.',
+  ];
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)',
+      backdropFilter: 'blur(4px)', display: 'grid', placeItems: 'center', padding: 20 }}>
+      <div class="panel enter" onClick={(e) => e.stopPropagation()}
+        style={{ padding: 22, maxWidth: 460, width: '100%', maxHeight: '80vh', overflowY: 'auto' }}>
+        <div class="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <h3 style={{ fontSize: 19 }}>Конфиденциальность</h3>
+          <button onClick={onClose} aria-label="Закрыть"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 2, marginTop: 2 }}>
+            <IconX size={20} />
+          </button>
+        </div>
+        <p class="muted" style={{ fontSize: 13.5, marginBottom: 16, lineHeight: 1.5 }}>
+          InSync хранит минимум данных и использует их только для отметки на парах.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {points.map((t, i) => (
+            <div key={i} class="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', flex: 'none', marginTop: 1, display: 'grid',
+                placeItems: 'center', background: 'var(--live-dim)', color: 'var(--live)' }}>
+                <IconCheck size={11} stroke={3} />
+              </span>
+              <span style={{ fontSize: 13.5, lineHeight: 1.5 }}>{t}</span>
+            </div>
+          ))}
+        </div>
+        <button class="btn" style={{ marginTop: 20 }} onClick={onClose}>Понятно</button>
+      </div>
     </div>
   );
 }
