@@ -47,6 +47,9 @@ export function Scanner({ active }: Props) {
   const [hint, setHint] = useState('');
   const [zoom, setZoom] = useState(1);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
+  const [camOn, setCamOn] = useState(false);        // пользователь нажал «Включить камеру»
+  const [camScanning, setCamScanning] = useState(false);  // камера реально показывает кадр
+  const [camStarting, setCamStarting] = useState(false);
 
   const scannerRef = useRef<Html5QrcodeType | null>(null);
   const activeRef = useRef(active);
@@ -67,8 +70,6 @@ export function Scanner({ active }: Props) {
     getFriendsApi()
       .then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled)))
       .catch(() => setEnabledFriends([]));
-    // Прогрев сессий в кеш — первая отметка не будет платить за расшифровку.
-    prewarmApi().catch(() => {});
   }, []);
 
   const buildTargets = (): Target[] => {
@@ -149,44 +150,65 @@ export function Scanner({ active }: Props) {
     }
   };
 
-  // Камера стартует один раз и работает всё время (нужно непрерывно читать QR,
-  // чтобы ловить смену токена). На переключении вкладок не трогаем — Scanner
-  // просто скрывается в app.tsx. Полная остановка только при размонтировании.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  // Старт камеры по явному жесту пользователя — в Telegram-вебвью это надёжнее
+  // авто-старта (меньше «камера включена, а кадр чёрный»).
+  const startCamera = async () => {
+    if (scannerRef.current?.isScanning) return;
+    setCamStarting(true); setHint('');
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      let scanner = scannerRef.current;
+      if (!scanner) { scanner = new Html5Qrcode('qr-reader', { verbose: false } as any); scannerRef.current = scanner; }
+      const cfg = { fps: 15, aspectRatio: 1 };   // без qrbox — рамку рисуем свою
+      // Задняя камера, при неудаче — любая доступная.
       try {
-        const { Html5Qrcode } = await import('html5-qrcode');
-        if (cancelled) return;
-        const scanner = new Html5Qrcode('qr-reader', { verbose: false } as any);
-        scannerRef.current = scanner;
-        const cfg = { fps: 15, aspectRatio: 1 };   // без qrbox — рамку рисуем свою
-        // Простые constraints — так getUserMedia надёжно запрашивает камеру в вебвью.
-        // Задняя камера, при неудаче — любая доступная.
-        try {
-          await scanner.start({ facingMode: 'environment' }, cfg, handleDecode, () => {});
-        } catch {
-          await scanner.start({ facingMode: 'user' }, cfg, handleDecode, () => {});
-        }
-        // Оптический зум, если камера его умеет
-        try {
-          const caps: any = (scanner as any).getRunningTrackCapabilities?.();
-          if (caps?.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > (caps.zoom.min ?? 1)) {
-            setZoomCaps({ min: caps.zoom.min ?? 1, max: caps.zoom.max, step: caps.zoom.step || 0.1 });
-          }
-        } catch {}
-      } catch (e) {
-        console.error(e);
-        setHint('Нет доступа к камере. Разреши камеру для Telegram в настройках телефона и переоткрой приложение.');
+        await scanner.start({ facingMode: 'environment' }, cfg, handleDecode, () => {});
+      } catch {
+        await scanner.start({ facingMode: 'user' }, cfg, handleDecode, () => {});
       }
-    })();
-    return () => {
-      cancelled = true;
-      const s = scannerRef.current;
-      if (s) { try { if (s.isScanning) s.stop().catch(() => {}); } catch {} }
-    };
+      setCamScanning(true);
+      // Оптический зум, если камера его умеет
+      try {
+        const caps: any = (scanner as any).getRunningTrackCapabilities?.();
+        if (caps?.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > (caps.zoom.min ?? 1)) {
+          setZoomCaps({ min: caps.zoom.min ?? 1, max: caps.zoom.max, step: caps.zoom.step || 0.1 });
+        }
+      } catch {}
+    } catch (e) {
+      console.error(e);
+      setCamScanning(false);
+      setHint('Нет доступа к камере. Разреши её для Telegram в настройках телефона.');
+    } finally {
+      setCamStarting(false);
+    }
+  };
+
+  const stopCamera = async () => {
+    setCamScanning(false); setZoomCaps(null);
+    const s = scannerRef.current;
+    if (s) { try { if (s.isScanning) await s.stop(); } catch {} }
+  };
+
+  // Камера жива, пока открыта вкладка «Сканер» и пользователь её включил.
+  // Уходим с вкладки — останавливаем (освобождаем камеру и чиним «чёрный кадр»),
+  // возвращаемся — поднимаем заново.
+  useEffect(() => {
+    if (camOn && active) startCamera(); else stopCamera();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camOn, active]);
+
+  // Полная остановка при размонтировании.
+  useEffect(() => () => {
+    const s = scannerRef.current;
+    if (s) { try { if (s.isScanning) s.stop().catch(() => {}); } catch {} }
   }, []);
+
+  // Нажатие кнопки: сразу греем TLS + сессии и включаем камеру.
+  const onStartScan = () => {
+    hapticRef.current?.impactOccurred?.('light');
+    prewarmApi().catch(() => {});
+    setCamOn(true);
+  };
 
   // Завершение сессии: когда никого не осталось в процессе — фиксируем итог.
   useEffect(() => {
@@ -232,12 +254,24 @@ export function Scanner({ active }: Props) {
       {/* Камера как «цель захвата сигнала» */}
       <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-xl)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
         <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+
+        {/* Пока камера не показывает кадр — кнопка включения поверх */}
+        {!camScanning && (
+          <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
+            <button class="btn" onClick={onStartScan} disabled={camStarting} style={{ width: 'auto', padding: '14px 26px' }}>
+              {camStarting ? 'Запуск…' : camOn ? 'Перезапустить камеру' : 'Включить камеру'}
+            </button>
+          </div>
+        )}
+
+        {camScanning && (
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 2 }}>
           <div class={'lock-frame' + (locked ? ' lock' : '')}>
             <div class="corner tl" /><div class="corner tr" /><div class="corner bl" /><div class="corner br" />
           </div>
           {burst && <div class="lock-burst"><span /><span /></div>}
         </div>
+        )}
         {hint && (
           <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, padding: '11px 14px', borderRadius: 'var(--r-sm)',
             background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', textAlign: 'center', fontSize: 14, fontWeight: 600 }}>
