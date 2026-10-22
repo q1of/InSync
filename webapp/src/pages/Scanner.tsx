@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
 import { markAttendanceApi, getFriendsApi, prewarmApi } from '../api/client';
 import type { Friend } from '../api/client';
-import { IconCheck, IconX } from '../components/icons';
+import { IconCheck, IconX, IconScan } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -47,7 +47,8 @@ export function Scanner({ active }: Props) {
   const [hint, setHint] = useState('');
   const [zoom, setZoom] = useState(1);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
-  const [camOn, setCamOn] = useState(false);        // пользователь нажал «Включить камеру»
+  const [scanOpen, setScanOpen] = useState(false);  // открыт попап сканирования
+  const [camOn, setCamOn] = useState(false);        // пользователь нажал «Открыть камеру»
   const [camScanning, setCamScanning] = useState(false);  // камера реально показывает кадр
   const [camStarting, setCamStarting] = useState(false);
 
@@ -189,13 +190,13 @@ export function Scanner({ active }: Props) {
     if (s) { try { if (s.isScanning) await s.stop(); } catch {} }
   };
 
-  // Камера жива, пока открыта вкладка «Сканер» и пользователь её включил.
-  // Уходим с вкладки — останавливаем (освобождаем камеру и чиним «чёрный кадр»),
-  // возвращаемся — поднимаем заново.
+  // Камера жива, только пока открыт попап сканирования и вкладка активна.
+  // Закрыли попап / ушли с вкладки — останавливаем (освобождаем камеру и чиним
+  // «чёрный кадр»); открыли снова и нажали «Открыть камеру» — поднимаем заново.
   useEffect(() => {
-    if (camOn && active) startCamera(); else stopCamera();
+    if (camOn && scanOpen && active) startCamera(); else stopCamera();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camOn, active]);
+  }, [camOn, scanOpen, active]);
 
   // Полная остановка при размонтировании.
   useEffect(() => () => {
@@ -203,7 +204,20 @@ export function Scanner({ active }: Props) {
     if (s) { try { if (s.isScanning) s.stop().catch(() => {}); } catch {} }
   }, []);
 
-  // Нажатие кнопки: сразу греем TLS + сессии и включаем камеру.
+  // «Сканировать QR» — открыть попап и сразу прогреть TLS+сессии (пока читают инфу).
+  const openScan = () => {
+    hapticRef.current?.impactOccurred?.('light');
+    prewarmApi().catch(() => {});
+    setScanOpen(true);
+  };
+
+  const closeScan = () => {
+    setScanOpen(false);
+    setCamOn(false);
+    reset();
+  };
+
+  // «Открыть камеру» внутри попапа — запуск камеры от жеста пользователя.
   const onStartScan = () => {
     hapticRef.current?.impactOccurred?.('light');
     prewarmApi().catch(() => {});
@@ -241,99 +255,163 @@ export function Scanner({ active }: Props) {
 
   const crew = enabledFriends.length;
   const doneCount = targets.filter((t) => t.status === 'done').length;
-  const today = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  const crewLabel = crew ? `ты + ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : 'только ты';
 
   return (
     <div class="screen screen-pad-top">
-      <div style={{ marginBottom: 22 }}>
-        <p class="eyebrow" style={{ textTransform: 'capitalize' }}>{today}</p>
-        <h1 style={{ fontSize: 28, marginTop: 6 }}>Привет, {user?.first_name || 'студент'}</h1>
-        <p class="muted" style={{ marginTop: 6 }}>Наведи на QR-код пары — держи, пока все отметятся</p>
-      </div>
-
-      {/* Камера как «цель захвата сигнала» */}
-      <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-xl)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
-        <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
-
-        {/* Пока камера не показывает кадр — кнопка включения поверх */}
-        {!camScanning && (
-          <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
-            <button class="btn" onClick={onStartScan} disabled={camStarting} style={{ width: 'auto', padding: '14px 26px' }}>
-              {camStarting ? 'Запуск…' : camOn ? 'Перезапустить камеру' : 'Включить камеру'}
-            </button>
-          </div>
-        )}
-
-        {camScanning && (
-        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 2 }}>
-          <div class={'lock-frame' + (locked ? ' lock' : '')}>
-            <div class="corner tl" /><div class="corner tr" /><div class="corner bl" /><div class="corner br" />
-          </div>
-          {burst && <div class="lock-burst"><span /><span /></div>}
+      {/* Hero — «на месте одним касанием» */}
+      <div class="panel enter" style={{ padding: 24, overflow: 'hidden' }}>
+        <div class="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
+          <span class="eyebrow">Посещаемость</span>
+          <span class="pill"><span class="dot dot-live" /> МИРЭА подключена</span>
         </div>
-        )}
-        {hint && (
-          <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, padding: '11px 14px', borderRadius: 'var(--r-sm)',
-            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', textAlign: 'center', fontSize: 14, fontWeight: 600 }}>
-            {hint}
-          </div>
-        )}
-        {zoomCaps && (
-          <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12, display: 'flex', alignItems: 'center', gap: 10,
-            padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', pointerEvents: 'auto', zIndex: 3 }}>
-            <span style={{ fontSize: 13, opacity: 0.85 }}>Зум</span>
-            <input type="range" min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step} value={zoom}
-              onInput={(e) => applyZoom(parseFloat((e.target as HTMLInputElement).value))}
-              style={{ flex: 1, accentColor: 'var(--live)' }} />
-            <span style={{ fontSize: 12, opacity: 0.7, minWidth: 30, textAlign: 'right' }}>{zoom.toFixed(1)}×</span>
-          </div>
-        )}
-      </div>
 
-      {/* Idle: кого будем отмечать */}
-      {session === 'idle' && (
-        <div class="panel" style={{ marginTop: 18, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div class="avatar" style={{ width: 40, height: 40, fontSize: 15 }}>{(user?.first_name || 'Я')[0]}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600 }}>Отмечаем: ты{crew ? ` + ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : ''}</div>
-            <div class="faint" style={{ fontSize: 13 }}>{crew ? 'Кого отмечать — во вкладке «Друзья»' : 'Отмечаем только тебя'}</div>
+        <div style={{ position: 'relative', height: 160, display: 'grid', placeItems: 'center' }}>
+          <svg width="250" height="150" viewBox="0 0 250 150" style={{ position: 'absolute', opacity: 0.55 }}>
+            <ellipse cx="125" cy="75" rx="112" ry="52" transform="rotate(-18 125 75)" fill="none" stroke="var(--hairline-2)" />
+            <ellipse cx="125" cy="75" rx="112" ry="46" transform="rotate(20 125 75)" fill="none" stroke="var(--hairline-2)" />
+          </svg>
+          <div style={{ width: 88, height: 88, borderRadius: 24, display: 'grid', placeItems: 'center',
+            background: 'linear-gradient(160deg, var(--bg-2), #0d1017)', border: '1px solid var(--hairline)',
+            boxShadow: '0 14px 44px rgba(0,0,0,0.55)' }}>
+            <IconScan size={42} color="var(--sig-b)" stroke={1.8} />
           </div>
         </div>
-      )}
 
-      {/* Active / Done: живой список статусов */}
-      {session !== 'idle' && (
-        <div class="panel" style={{ marginTop: 18, padding: 8 }}>
-          <div style={{ padding: '8px 12px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontWeight: 700 }}>
-              <span class="display">{doneCount}</span>
-              <span class="faint"> / {targets.length}</span> отмечено
-            </span>
-            {session === 'active'
-              ? <span class="pill"><span class="dot dot-live" /> идёт отметка</span>
-              : <span class="pill"><span class="dot dot-off" /> завершено</span>}
-          </div>
+        <h1 style={{ fontSize: 33, lineHeight: 1.06, textAlign: 'center', marginTop: 4 }}>
+          На&nbsp;месте<br /><span class="sig-text">одним касанием</span>
+        </h1>
+        <p class="muted" style={{ textAlign: 'center', fontSize: 14.5, lineHeight: 1.5, maxWidth: 300, margin: '13px auto 0' }}>
+          Наведи камеру на QR-код пары. Остальное сделает InSync.
+        </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {targets.map((t) => (
-              <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-                <StatusBadge status={t.status} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {t.is_self ? 'Ты' : t.name}
-                  </div>
-                  <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
+        <button class="btn" onClick={openScan}
+          style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <IconScan size={20} stroke={2.2} /> Сканировать QR
+          </span>
+          <ArrowUpRight />
+        </button>
+
+        <div class="row" style={{ justifyContent: 'center', gap: 8, marginTop: 16 }}>
+          <IconCheck size={14} color="var(--ink-faint)" stroke={2.6} />
+          <span class="faint" style={{ fontSize: 13 }}>Результат отметки появится здесь</span>
+        </div>
+      </div>
+
+      {/* Кого отмечаем — быстрый факт */}
+      <div class="panel" style={{ marginTop: 14, padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div class="avatar" style={{ width: 40, height: 40, fontSize: 15 }}>{(user?.first_name || 'Я')[0]}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>Отмечаем: {crewLabel}</div>
+          <div class="faint" style={{ fontSize: 13 }}>{crew ? 'Кого отмечать — во вкладке «Друзья»' : 'Пока отмечаем только тебя'}</div>
+        </div>
+      </div>
+
+      {/* Попап сканирования */}
+      {scanOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          display: 'grid', placeItems: 'center', padding: 16 }}>
+          <div class="panel enter" style={{ padding: 16, maxWidth: 460, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
+            <div class="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
+              <h3 style={{ fontSize: 18 }}>Сканирование</h3>
+              <button onClick={closeScan} aria-label="Закрыть"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 2 }}>
+                <IconX size={20} />
+              </button>
+            </div>
+
+            <div class="row" style={{ gap: 12, marginBottom: 14 }}>
+              <div class="avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{(user?.first_name || 'Я')[0]}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>Отмечаем: {crewLabel}</div>
+                <div class="faint" style={{ fontSize: 12.5 }}>
+                  {crew ? `${crew + 1} ${crew + 1 < 5 ? 'человека' : 'человек'} одним сканом` : 'Только тебя'}
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
 
-          {session === 'done' && (
-            <button class="btn" style={{ marginTop: 10 }} onClick={reset}>Отметить снова</button>
-          )}
+            {camOn ? (
+              <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
+                <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+                {camStarting && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4 }}><div class="spinner" /></div>
+                )}
+                {!camStarting && !camScanning && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
+                    <button class="btn" onClick={onStartScan} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
+                  </div>
+                )}
+                {camScanning && (
+                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 2 }}>
+                    <div class={'lock-frame' + (locked ? ' lock' : '')}>
+                      <div class="corner tl" /><div class="corner tr" /><div class="corner bl" /><div class="corner br" />
+                    </div>
+                    {burst && <div class="lock-burst"><span /><span /></div>}
+                  </div>
+                )}
+                {hint && (
+                  <div style={{ position: 'absolute', left: 14, right: 14, bottom: 14, padding: '10px 14px', borderRadius: 'var(--r-sm)',
+                    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', textAlign: 'center', fontSize: 13.5, fontWeight: 600 }}>
+                    {hint}
+                  </div>
+                )}
+                {zoomCaps && (
+                  <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12, display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', pointerEvents: 'auto', zIndex: 3 }}>
+                    <span style={{ fontSize: 13, opacity: 0.85 }}>Зум</span>
+                    <input type="range" min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step} value={zoom}
+                      onInput={(e) => applyZoom(parseFloat((e.target as HTMLInputElement).value))}
+                      style={{ flex: 1, accentColor: 'var(--live)' }} />
+                    <span style={{ fontSize: 12, opacity: 0.7, minWidth: 30, textAlign: 'right' }}>{zoom.toFixed(1)}×</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button class="btn" onClick={onStartScan} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                <IconScan size={20} stroke={2.2} /> Открыть камеру
+              </button>
+            )}
+
+            {session !== 'idle' && (
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div class="row" style={{ justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 700 }}>
+                    <span class="display">{doneCount}</span><span class="faint"> / {targets.length}</span> отмечено
+                  </span>
+                  {session === 'active'
+                    ? <span class="pill"><span class="dot dot-live" /> идёт отметка</span>
+                    : <span class="pill"><span class="dot dot-off" /> завершено</span>}
+                </div>
+                {targets.map((t) => (
+                  <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
+                    <StatusBadge status={t.status} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {t.is_self ? 'Ты' : t.name}
+                      </div>
+                      <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
+                    </div>
+                  </div>
+                ))}
+                {session === 'done' && (
+                  <button class="btn" style={{ marginTop: 4 }} onClick={reset}>Отметить снова</button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+function ArrowUpRight() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 17 17 7M9 7h8v8" />
+    </svg>
   );
 }
 
