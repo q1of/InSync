@@ -141,29 +141,31 @@ function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
       </button>
 
       {open && (
-        <div style={{ padding: '0 10px 10px' }}>
+        <div style={{ padding: '0 14px 8px' }}>
           {day.lessons.map((l) => {
             const markable = isMarkable(l.type);          // отмечаемся только на лекциях
             const isOff = markable && offSet.has(l.start_epoch || 0);
             return (
-              <div key={l.start_epoch} class="row" style={{ alignItems: 'stretch', gap: 12, padding: '11px 6px',
+              <div key={l.start_epoch} class="row" style={{ alignItems: 'center', gap: 10, padding: '9px 0',
                 borderTop: '1px solid var(--hairline)', opacity: isOff ? 0.5 : 1 }}>
-                <div style={{ width: 52, flex: 'none', textAlign: 'right', paddingTop: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
-                  <div class="faint" style={{ fontSize: 12 }}>{fmtTime(l.end_epoch)}</div>
+                <div style={{ width: 44, flex: 'none', textAlign: 'right' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
+                  <div class="faint" style={{ fontSize: 11.5 }}>{fmtTime(l.end_epoch)}</div>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div class="row" style={{ gap: 7, alignItems: 'baseline' }}>
+                  <div class="row" style={{ gap: 6, alignItems: 'center' }}>
                     <TypeTag type={l.type} />
-                    <span style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                   </div>
-                  <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
+                  <div class="faint" style={{ fontSize: 12, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {[l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-                {markable
-                  ? <OptoutToggle on={isOff} onClick={() => onToggleOptout(l)} />
-                  : <span class="faint" style={{ alignSelf: 'center', flex: 'none', fontSize: 11, textAlign: 'right', lineHeight: 1.3, maxWidth: 74 }}>отмечает преподаватель</span>}
+                <div style={{ flex: 'none', width: 88, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                  {markable
+                    ? <OptoutToggle on={isOff} onClick={() => onToggleOptout(l)} />
+                    : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25 }}>отмечает<br />преподаватель</span>}
+                </div>
               </div>
             );
           })}
@@ -213,10 +215,10 @@ function TypeTag({ type }: { type?: string }) {
 function OptoutToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <div onClick={onClick} title="Не отмечаться на этой паре"
-      style={{ alignSelf: 'center', flex: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-      <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+      style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+      <span style={{ fontSize: 10.5, fontWeight: 600, whiteSpace: 'nowrap',
         color: on ? 'var(--warn)' : 'var(--ink-faint)' }}>не&nbsp;отмечать</span>
-      <div class="toggle" data-on={on} style={{ transform: 'scale(0.62)', transformOrigin: 'right center' }} />
+      <div class="toggle" data-on={on} style={{ transform: 'scale(0.58)', transformOrigin: 'right center' }} />
     </div>
   );
 }
