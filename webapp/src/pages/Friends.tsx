@@ -15,7 +15,7 @@ function initials(name?: string | null) {
 }
 
 export function Friends({ onPendingChange }: Props) {
-  const { haptic } = useTelegram();
+  const { haptic, webApp } = useTelegram();
   const [tab, setTab] = useState<'friends' | 'pending'>('friends');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pending, setPending] = useState<PendingReq[]>([]);
@@ -42,7 +42,12 @@ export function Friends({ onPendingChange }: Props) {
   };
   const accept = async (tid: number) => { try { await acceptFriendApi(tid); haptic?.impactOccurred?.('light'); load(); } catch (e: any) { flash(e.message || 'Ошибка', false); } };
   const reject = async (tid: number) => { try { await rejectFriendApi(tid); load(); } catch {} };
-  const remove = async (tid: number) => { try { await removeFriendApi(tid); haptic?.impactOccurred?.('medium'); load(); } catch {} };
+  const doRemove = async (tid: number) => { try { await removeFriendApi(tid); haptic?.impactOccurred?.('medium'); load(); } catch {} };
+  const remove = (tid: number, name?: string | null) => {
+    const msg = `Удалить ${name || 'этого друга'} из друзей?`;
+    if (webApp?.showConfirm) webApp.showConfirm(msg, (ok: boolean) => { if (ok) doRemove(tid); });
+    else if (confirm(msg)) doRemove(tid);
+  };
   const toggle = async (f: Friend) => {
     const next = !f.marking_enabled;
     setFriends((arr) => arr.map((x) => x.telegram_id === f.telegram_id ? { ...x, marking_enabled: next } : x));
@@ -94,7 +99,7 @@ export function Friends({ onPendingChange }: Props) {
                     <div class="faint" style={{ fontSize: 13 }}>{f.group || `ID ${f.telegram_id}`}</div>
                   </div>
                   <div class="toggle" data-on={f.marking_enabled} onClick={() => toggle(f)} title="Отмечать на паре" />
-                  <button class="tap" onClick={() => remove(f.telegram_id)} style={{ background: 'none', border: 'none', color: 'var(--ink-faint)', cursor: 'pointer', padding: 4 }} aria-label="Удалить"><IconTrash size={18} /></button>
+                  <button class="tap" onClick={() => remove(f.telegram_id, f.name)} style={{ background: 'none', border: 'none', color: 'var(--ink-faint)', cursor: 'pointer', padding: 4 }} aria-label="Удалить"><IconTrash size={18} /></button>
                 </div>
               ))}
             </div>
