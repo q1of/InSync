@@ -145,6 +145,10 @@ h1, h2, h3, .display {
 }
 .field::placeholder { color: var(--ink-faint); }
 .field:focus { border-color: var(--hairline-2); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.07); }
+/* прячем нативный глазик/крестик браузера — у нас свой белый */
+.field::-ms-reveal, .field::-ms-clear { display: none; }
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-strong-password-auto-fill-button { display: none !important; }
 
 /* ---------- статус-пилл ---------- */
 .pill {

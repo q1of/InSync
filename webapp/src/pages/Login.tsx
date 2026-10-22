@@ -6,6 +6,7 @@ interface Props { onLoginSuccess: () => void; }
 export function Login({ onLoginSuccess }: Props) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [code, setCode] = useState('');
   const [needs2fa, setNeeds2fa] = useState(false);
   const [challengeId, setChallengeId] = useState('');
@@ -83,9 +84,18 @@ export function Login({ onLoginSuccess }: Props) {
             <input class="field" style={{ marginBottom: 12 }} type="text" autoComplete="username"
               placeholder="Логин от Пульса" value={username}
               onInput={(e) => setUsername((e.target as HTMLInputElement).value)} required />
-            <input class="field" style={{ marginBottom: 18 }} type="password" autoComplete="current-password"
-              placeholder="Пароль" value={password}
-              onInput={(e) => setPassword((e.target as HTMLInputElement).value)} required />
+            <div style={{ position: 'relative', marginBottom: 18 }}>
+              <input class="field" style={{ marginBottom: 0, paddingRight: 46 }}
+                type={showPw ? 'text' : 'password'} autoComplete="current-password"
+                placeholder="Пароль" value={password}
+                onInput={(e) => setPassword((e.target as HTMLInputElement).value)} required />
+              <button type="button" onClick={() => setShowPw((v) => !v)} aria-label="Показать пароль"
+                style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: '#fff', opacity: 0.9,
+                  display: 'flex', alignItems: 'center', padding: 6 }}>
+                {showPw ? <EyeOff /> : <Eye />}
+              </button>
+            </div>
             <button class="btn" type="submit" disabled={loading}>{loading ? 'Входим…' : 'Войти'}</button>
             <p class="faint" style={{ fontSize: 12.5, textAlign: 'center', marginTop: 14, lineHeight: 1.5 }}>
               Данные уходят напрямую в МИРЭА. InSync хранит только зашифрованную сессию.
@@ -112,6 +122,20 @@ export function Login({ onLoginSuccess }: Props) {
     </div>
   );
 }
+
+const Eye = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const EyeOff = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-7-11-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
+);
 
 function Err({ text }: { text: string }) {
   return (
