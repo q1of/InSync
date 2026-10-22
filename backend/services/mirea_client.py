@@ -346,7 +346,6 @@ class PulseClient:
 
 # ------- Высокоуровневые операции -------
 
-_FIO_RE = re.compile(r"^[А-ЯЁ][а-яё-]+ [А-ЯЁ][а-яё-]+( [А-ЯЁ][а-яё-]+)?$")
 _GROUP_RE = re.compile(r"\b[А-ЯЁ]{4}-\d{2}-\d{2}\b")
 
 
@@ -376,15 +375,11 @@ async def get_me(session_cookies: dict) -> dict:
                 "group_name": None, "error": err or "Сессия истекла"}
 
     strings = _all_strings(raw)
-    full_name = next((s.strip() for s in strings if _FIO_RE.match(s.strip())), None)
+    # ФИО из профиля МИРЭА не извлекаем (ненадёжно) — в UI показываем имя Telegram.
     group = next((m.group(0) for s in strings for m in [_GROUP_RE.search(s)] if m), None)
-    if not full_name:
-        # ФИО не распознано строгим regex — логируем кандидатов, чтобы поправить парсинг.
-        cand = [s.strip() for s in strings if 3 <= len(s.strip()) <= 60]
-        logger.warning("get_me: ФИО не распознано. Кандидаты (%d): %s", len(cand), cand[:30])
     merged = dict(session_cookies); merged.update(cookies_out)
     merged["__token_refreshed_at"] = str(int(time.time()))
-    return {"valid": True, "cookies": merged, "full_name": full_name, "group_name": group}
+    return {"valid": True, "cookies": merged, "full_name": None, "group_name": group}
 
 
 # ------- Расписание -------

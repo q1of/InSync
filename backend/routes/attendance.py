@@ -6,7 +6,7 @@ from backend.models import (
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
-from backend.database import get_db, get_user
+from backend.database import get_db
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -14,13 +14,12 @@ router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict]) -> None:
     """Шлёт в Telegram уведомление каждому успешно отмеченному другу (не себе).
 
-    В тексте — ФИО того, кто отметил (из профиля МИРЭА), а не Telegram-ник.
+    В тексте — имя того, кто отметил (из Telegram).
     """
     from backend.main import bot  # ленивый импорт — избегаем циклической зависимости
     if not bot:
         return
-    db_user = await get_user(user.telegram_id)
-    marker = (db_user["full_name"] if db_user else None) or user.display_name
+    marker = user.display_name
     for r in raw_results:
         if r.get("success") and r["telegram_id"] != user.telegram_id:
             try:
