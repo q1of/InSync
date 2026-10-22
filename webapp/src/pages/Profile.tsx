@@ -62,6 +62,7 @@ export function Profile({ onLogout }: Props) {
       <div class="panel enter" style={{ padding: 26, textAlign: 'center', marginBottom: 16 }}>
         <div class="avatar" style={{ width: 84, height: 84, fontSize: 30, margin: '0 auto 16px' }}>{initials(name)}</div>
         <h2 style={{ fontSize: 23 }}>{name}</h2>
+        {user?.username && <p class="faint" style={{ marginTop: 4, fontSize: 13 }}>@{user.username}</p>}
         {session?.group_name && <p class="muted" style={{ marginTop: 6 }}>{session.group_name}</p>}
         <div style={{ marginTop: 16 }}>
           <span class="pill">
