@@ -308,6 +308,11 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 }
 .toggle[data-on="true"]::after { transform: translateX(18px); background: #09090B; }
 
+/* компактный тумблер (расписание) — настоящий размер, без transform-scale */
+.toggle.sm { width: 34px; height: 20px; }
+.toggle.sm::after { width: 16px; height: 16px; }
+.toggle.sm[data-on="true"]::after { transform: translateX(14px); }
+
 /* ---------- сегмент ---------- */
 .segment {
   display: flex; padding: 4px; gap: 4px;

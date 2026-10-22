@@ -157,14 +157,14 @@ function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
                     <TypeTag type={l.type} />
                     <span style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                   </div>
-                  <div class="faint" style={{ fontSize: 12, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div class="faint" style={{ fontSize: 12, marginTop: 2, lineHeight: 1.35 }}>
                     {[l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-                <div style={{ flex: 'none', width: 88, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                   {markable
                     ? <OptoutToggle on={isOff} onClick={() => onToggleOptout(l)} />
-                    : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25 }}>отмечает<br />преподаватель</span>}
+                    : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25, whiteSpace: 'nowrap' }}>отмечает<br />преподаватель</span>}
                 </div>
               </div>
             );
@@ -215,10 +215,10 @@ function TypeTag({ type }: { type?: string }) {
 function OptoutToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <div onClick={onClick} title="Не отмечаться на этой паре"
-      style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}>
       <span style={{ fontSize: 10.5, fontWeight: 600, whiteSpace: 'nowrap',
         color: on ? 'var(--warn)' : 'var(--ink-faint)' }}>не&nbsp;отмечать</span>
-      <div class="toggle" data-on={on} style={{ transform: 'scale(0.58)', transformOrigin: 'right center' }} />
+      <div class="toggle sm" data-on={on} />
     </div>
   );
 }
