@@ -85,6 +85,13 @@ export const setOptoutApi = (body: { start_epoch: number; end_epoch: number | nu
 export const logoutApi = () =>
   api('POST', '/auth/logout');
 
+// Настройки уведомлений
+export interface NotifPrefs { marked: boolean; login: boolean; session: boolean; }
+export const getNotifPrefsApi = () =>
+  api<NotifPrefs>('GET', '/settings/notifications');
+export const setNotifPrefApi = (key: keyof NotifPrefs, enabled: boolean) =>
+  api('POST', '/settings/notifications', { key, enabled });
+
 // Attendance
 export interface MarkResult {
   user_name: string;

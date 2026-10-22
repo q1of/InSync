@@ -40,6 +40,9 @@ async def init_db():
                 encrypted_session TEXT,
                 session_valid BOOLEAN DEFAULT 0,
                 session_updated_at INTEGER,
+                notif_marked INTEGER DEFAULT 1,   -- уведомлять об отметках на парах
+                notif_login INTEGER DEFAULT 1,    -- уведомлять о входе в аккаунт
+                notif_session INTEGER DEFAULT 1,  -- уведомлять о слёте сессии
                 created_at INTEGER DEFAULT (unixepoch())
             );
         """)
@@ -91,6 +94,9 @@ async def init_db():
             ucols = [r["name"] for r in await cur.fetchall()]
         if "username" not in ucols:
             await db.execute("ALTER TABLE users ADD COLUMN username TEXT")
+        for col in ("notif_marked", "notif_login", "notif_session"):
+            if col not in ucols:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 1")
 
         async with db.execute("PRAGMA table_info(attendance_log)") as cur:
             acols = [r["name"] for r in await cur.fetchall()]
@@ -209,6 +215,38 @@ async def opted_out_now(telegram_ids: List[int], now: int, grace: int = 1800) ->
             (*telegram_ids, grace, now, grace, now),
         ) as cur:
             return {r["telegram_id"]: (r["lesson_name"] or "эту пару") for r in await cur.fetchall()}
+
+
+_NOTIF_COLS = {"marked": "notif_marked", "login": "notif_login", "session": "notif_session"}
+
+
+async def get_notif_prefs(telegram_id: int) -> dict:
+    """Настройки уведомлений пользователя (по умолчанию всё включено)."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT notif_marked, notif_login, notif_session FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if not row:
+        return {"marked": True, "login": True, "session": True}
+    return {"marked": bool(row["notif_marked"]), "login": bool(row["notif_login"]),
+            "session": bool(row["notif_session"])}
+
+
+async def set_notif_pref(telegram_id: int, key: str, enabled: bool) -> None:
+    col = _NOTIF_COLS.get(key)
+    if not col:
+        return
+    async with get_db() as db:
+        await db.execute(f"UPDATE users SET {col} = ? WHERE telegram_id = ?",
+                         (1 if enabled else 0, telegram_id))
+        await db.commit()
+
+
+async def notif_enabled(telegram_id: int, key: str) -> bool:
+    """True, если пользователь хочет получать уведомления этого типа."""
+    return (await get_notif_prefs(telegram_id)).get(key, True)
 
 
 async def get_friends_sessions(telegram_id: int) -> List[aiosqlite.Row]:

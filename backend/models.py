@@ -131,6 +131,10 @@ class OptoutRequest(BaseModel):
     lesson_name: Optional[str] = None
     enabled: bool = True                 # True — отключить отметку, False — вернуть
 
+class NotifPrefRequest(BaseModel):
+    key: str        # marked | login | session
+    enabled: bool
+
 class SessionStatus(BaseModel):
     logged_in: bool = False          # есть сохранённая сессия Пульса
     valid: bool = False              # сессия реально живая (проверено на pulse.mirea.ru)

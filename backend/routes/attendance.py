@@ -11,7 +11,7 @@ from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
 from backend.services.mirea_client import warm_connection
-from backend.database import get_db, opted_out_now
+from backend.database import get_db, opted_out_now, notif_enabled
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -20,24 +20,31 @@ router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 _LOG_LOCK = asyncio.Lock()
 
 
-async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict]) -> None:
-    """Шлёт в Telegram уведомление каждому успешно отмеченному другу (не себе).
-
-    В тексте — имя того, кто отметил (из Telegram).
+async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
+                                 lesson_name: str | None = None) -> None:
+    """Уведомления в Telegram по итогам скана (с учётом настроек получателя):
+      • другу, которого отметили — «вас отметил …»;
+      • другу, которого пропустили из-за его же отключения — «вас не отметили, вы отключили».
     """
     from backend.main import bot  # ленивый импорт — избегаем циклической зависимости
     if not bot:
         return
     marker = user.display_name
+    where = f"на «{lesson_name}»" if lesson_name else "на паре"
     for r in raw_results:
-        if r.get("success") and r["telegram_id"] != user.telegram_id:
-            try:
+        tid = r["telegram_id"]
+        if tid == user.telegram_id:
+            continue  # себе не шлём
+        if not await notif_enabled(tid, "marked"):
+            continue
+        try:
+            if r.get("success"):
+                await bot.send_message(tid, f"✔️ Вас отметил {where} {marker} (через InSync).")
+            elif r.get("opted_out"):
                 await bot.send_message(
-                    r["telegram_id"],
-                    f"✔️ Вас отметил на паре {marker} (через InSync).",
-                )
-            except Exception:
-                pass
+                    tid, f"ℹ️ Вас не отметили {where} — вы отключили отметку на этой паре.")
+        except Exception:
+            pass
 
 
 def _is_retriable(success: bool, error: str | None) -> bool:
@@ -96,7 +103,7 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
                 await db.commit()
         except Exception as e:
             logger.error("attendance log failed: %s", e)
-    await _notify_marked_friends(user, raw_results)
+    await _notify_marked_friends(user, raw_results, lesson_name)
 
 
 @router.post("/mark", response_model=AttendanceResponse)
