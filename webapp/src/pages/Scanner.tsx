@@ -311,16 +311,6 @@ export function Scanner({ active }: Props) {
               </button>
             </div>
 
-            <div class="row" style={{ gap: 12, marginBottom: 14 }}>
-              <div class="avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{(user?.first_name || 'Я')[0]}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>Отмечаем: {crewLabel}</div>
-                <div class="faint" style={{ fontSize: 12.5 }}>
-                  {crew ? `${crew + 1} ${crew + 1 < 5 ? 'человека' : 'человек'} одним сканом` : 'Только тебя'}
-                </div>
-              </div>
-            </div>
-
             {camOn ? (
               <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
                 <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
@@ -363,8 +353,20 @@ export function Scanner({ active }: Props) {
               </button>
             )}
 
+            {/* Инфо — под камерой: кого отмечаем */}
+            <div class="row" style={{ gap: 12, marginTop: 14 }}>
+              <div class="avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{(user?.first_name || 'Я')[0]}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>Отмечаем: {crewLabel}</div>
+                <div class="faint" style={{ fontSize: 12.5 }}>
+                  {crew ? `${crew + 1} ${crew + 1 < 5 ? 'человека' : 'человек'} одним сканом` : 'Только тебя'}
+                </div>
+              </div>
+            </div>
+
+            {/* Табличка статусов: въезжает при поимке QR */}
             {session !== 'idle' && (
-              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div class="enter" style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div class="row" style={{ justifyContent: 'space-between' }}>
                   <span style={{ fontWeight: 700 }}>
                     <span class="display">{doneCount}</span><span class="faint"> / {targets.length}</span> отмечено
@@ -373,17 +375,19 @@ export function Scanner({ active }: Props) {
                     ? <span class="pill"><span class="dot dot-live" /> идёт отметка</span>
                     : <span class="pill"><span class="dot dot-off" /> завершено</span>}
                 </div>
-                {targets.map((t) => (
-                  <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-                    <StatusBadge status={t.status} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {t.is_self ? 'Ты' : t.name}
+                <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {targets.map((t) => (
+                    <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
+                      <StatusBadge status={t.status} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {t.is_self ? 'Ты' : t.name}
+                        </div>
+                        <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
                       </div>
-                      <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
                 {session === 'done' && (
                   <button class="btn" style={{ marginTop: 4 }} onClick={reset}>Отметить снова</button>
                 )}
