@@ -369,6 +369,17 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 @keyframes heroGlow { 0%, 100% { opacity: 0.35; transform: scale(0.95); } 50% { opacity: 0.6; transform: scale(1.1); } }
 @keyframes heroScan { 0% { transform: translateY(-130%); } 50% { transform: translateY(230%); } 100% { transform: translateY(-130%); } }
 
+/* фирменный знак InSync: по базовому контуру бежит светящийся «сигнал» */
+.logo-mark { width: 58px; height: 58px; overflow: visible; }
+.logo-mark polyline { fill: none; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
+.logo-mark .logo-base { stroke: var(--ink); opacity: 0.26; }
+.logo-mark .logo-trace {
+  stroke: var(--ink); stroke-dasharray: 26 100;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+  animation: logoTrace 2.6s linear infinite;
+}
+@keyframes logoTrace { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -126; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }

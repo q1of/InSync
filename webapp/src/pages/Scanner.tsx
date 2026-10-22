@@ -278,8 +278,10 @@ export function Scanner({ active }: Props) {
           </svg>
           <div class="hero-glow" />
           <div class="hero-tile">
-            <IconScan size={42} stroke={1.7} />
-            <div class="hero-scan" />
+            <svg class="logo-mark" viewBox="0 0 100 100">
+              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
+              <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
+            </svg>
           </div>
         </div>
 
