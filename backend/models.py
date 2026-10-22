@@ -80,6 +80,8 @@ class AttendanceRequest(BaseModel):
     # Идентификатор одной сессии сканирования: объединяет все волны повторов
     # (QR на экране меняется каждые 5с, поэтому группируем не по токену).
     scan_id: Optional[str] = None
+    # Название пары (определяется фронтом по расписанию во время скана) — для истории.
+    lesson_name: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {

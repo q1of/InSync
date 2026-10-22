@@ -47,15 +47,18 @@ function ScanCard({ scan }: { scan: Scan }) {
   const accent = allOk ? 'var(--live)' : scan.successful === 0 ? 'var(--miss)' : 'var(--warn)';
   return (
     <div class="panel" style={{ padding: 16 }}>
-      <div class="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-        <div class="row" style={{ gap: 10 }}>
-          <span class="display" style={{ fontSize: 18 }}>{time}</span>
-          <span class="faint" style={{ fontSize: 13 }}>Пара</span>
+      <div class="row" style={{ justifyContent: 'space-between', marginBottom: 12, gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {scan.lesson_name || 'Пара'}
+          </div>
+          <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>{time}</div>
         </div>
-        <span class="pill" style={{ padding: '4px 11px', fontSize: 12.5, color: accent }}>
+        <span class="pill" style={{ padding: '4px 11px', fontSize: 12.5, color: accent, flex: 'none' }}>
           {scan.successful}/{scan.total} отмечено
         </span>
       </div>
+      <div class="faint" style={{ fontSize: 12, marginBottom: 8 }}>Вы отметили</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
         {scan.targets.map((t, i) => (
           <div key={i} class="row" style={{ gap: 10 }}>

@@ -100,15 +100,16 @@ export interface MarkResponse { results: MarkResult[]; total: number; successful
 // Прогрев сессий в кеш перед сканом (чтобы первая отметка была быстрой)
 export const prewarmApi = () => api<{ ready: number }>('POST', '/attendance/prewarm');
 
-export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scanId?: string }) =>
+export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scanId?: string; lessonName?: string | null }) =>
   api<MarkResponse>('POST', '/attendance/mark', {
     qr_data: qrData,
     only: opts?.only ?? null,
     scan_id: opts?.scanId ?? null,
+    lesson_name: opts?.lessonName ?? null,
   });
 
 export interface ScanTarget { name: string; is_self: boolean; success: boolean; error: string | null; }
-export interface Scan { created_at: number; targets: ScanTarget[]; successful: number; total: number; }
+export interface Scan { created_at: number; lesson_name?: string | null; targets: ScanTarget[]; successful: number; total: number; }
 export const getHistoryApi = () =>
   api<{ scans: Scan[] }>('GET', '/attendance/history');
 

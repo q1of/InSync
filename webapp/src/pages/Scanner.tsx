@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
-import { markAttendanceApi, getFriendsApi, prewarmApi } from '../api/client';
+import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi } from '../api/client';
 import type { Friend } from '../api/client';
-import { IconCheck, IconX, IconScan } from '../components/icons';
+import { IconCheck, IconX, IconScan, IconCamera, IconUsers } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -61,6 +61,7 @@ export function Scanner({ active }: Props) {
   const inFlightRef = useRef(false);
   const lastInvalid = useRef(0);
   const hapticRef = useRef(haptic);
+  const lessonRef = useRef<string | null>(null);   // текущая пара (по расписанию) — для истории
 
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -85,7 +86,7 @@ export function Scanner({ active }: Props) {
     inFlightRef.current = true;
     setTargets((ts) => ts.map((t) => (ids.includes(t.id) ? { ...t, status: 'marking' } : t)));
     try {
-      const res = await markAttendanceApi(text, { only: ids, scanId: scanIdRef.current });
+      const res = await markAttendanceApi(text, { only: ids, scanId: scanIdRef.current, lessonName: lessonRef.current });
       const byId = new Map(res.results.map((r) => [r.telegram_id, r]));
       setTargets((ts) =>
         ts.map((t) => {
@@ -204,10 +205,15 @@ export function Scanner({ active }: Props) {
     if (s) { try { if (s.isScanning) s.stop().catch(() => {}); } catch {} }
   }, []);
 
-  // «Сканировать QR» — открыть попап и сразу прогреть TLS+сессии (пока читают инфу).
+  // «Сканировать QR» — открыть попап, прогреть TLS+сессии и определить текущую пару.
   const openScan = () => {
     hapticRef.current?.impactOccurred?.('light');
     prewarmApi().catch(() => {});
+    getScheduleApi(1).then((r) => {
+      const now = Date.now() / 1000;
+      const l = r.lessons.find((x) => (x.start_epoch || 0) - 900 <= now && now <= (x.end_epoch || (x.start_epoch || 0) + 5400));
+      lessonRef.current = l?.name || null;
+    }).catch(() => { lessonRef.current = null; });
     setScanOpen(true);
   };
 
@@ -293,103 +299,127 @@ export function Scanner({ active }: Props) {
         </button>
 
         <div class="row" style={{ justifyContent: 'center', gap: 8, marginTop: 16 }}>
-          <IconCheck size={14} color="var(--ink-faint)" stroke={2.6} />
-          <span class="faint" style={{ fontSize: 13 }}>Результат отметки появится здесь</span>
+          <span class="faint" style={{ fontSize: 12.5 }}>История отметок — во вкладке «Пары»</span>
         </div>
       </div>
 
-      {/* Попап сканирования */}
+      {/* Попап отметки */}
       {scanOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(5px)',
           display: 'grid', placeItems: 'center', padding: 16 }}>
-          <div class="panel enter" style={{ padding: 16, maxWidth: 460, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
-            <div class="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
-              <h3 style={{ fontSize: 18 }}>Сканирование</h3>
+          <div class="panel enter" style={{ padding: 0, maxWidth: 440, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
+            {/* Хедер */}
+            <div class="row" style={{ justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid var(--hairline)' }}>
+              <h3 style={{ fontSize: 20 }}>Отметка на паре</h3>
               <button onClick={closeScan} aria-label="Закрыть"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', padding: 2 }}>
-                <IconX size={20} />
+                style={{ width: 34, height: 34, flex: 'none', borderRadius: '50%', border: '1px solid var(--hairline-2)',
+                  background: 'none', color: 'var(--ink-dim)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <IconX size={18} />
               </button>
             </div>
 
-            {camOn ? (
-              <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
-                <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
-                {camStarting && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4 }}><div class="spinner" /></div>
-                )}
-                {!camStarting && !camScanning && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
-                    <button class="btn" onClick={onStartScan} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
+            {!camOn ? (
+              /* Hero — приглашение открыть камеру */
+              <div style={{ padding: '26px 22px 26px' }}>
+                <div style={{ display: 'grid', placeItems: 'center' }}>
+                  <div class="hero-tile" style={{ width: 112, height: 112, borderRadius: 30 }}>
+                    <IconScan size={52} stroke={1.7} />
+                    <div class="hero-scan" />
                   </div>
-                )}
-                {camScanning && (
-                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 2 }}>
-                    <div class={'lock-frame' + (locked ? ' lock' : '')}>
-                      <div class="corner tl" /><div class="corner tr" /><div class="corner bl" /><div class="corner br" />
-                    </div>
-                    {burst && <div class="lock-burst"><span /><span /></div>}
-                  </div>
-                )}
-                {hint && (
-                  <div style={{ position: 'absolute', left: 14, right: 14, bottom: 14, padding: '10px 14px', borderRadius: 'var(--r-sm)',
-                    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', textAlign: 'center', fontSize: 13.5, fontWeight: 600 }}>
-                    {hint}
-                  </div>
-                )}
-                {zoomCaps && (
-                  <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12, display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', pointerEvents: 'auto', zIndex: 3 }}>
-                    <span style={{ fontSize: 13, opacity: 0.85 }}>Зум</span>
-                    <input type="range" min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step} value={zoom}
-                      onInput={(e) => applyZoom(parseFloat((e.target as HTMLInputElement).value))}
-                      style={{ flex: 1, accentColor: 'var(--live)' }} />
-                    <span style={{ fontSize: 12, opacity: 0.7, minWidth: 30, textAlign: 'right' }}>{zoom.toFixed(1)}×</span>
-                  </div>
-                )}
+                </div>
+                <h2 style={{ fontSize: 24, textAlign: 'center', marginTop: 22 }}>Лови момент. И&nbsp;QR.</h2>
+                <p class="muted" style={{ textAlign: 'center', fontSize: 14.5, lineHeight: 1.5, margin: '10px auto 0', maxWidth: 280 }}>
+                  Открой камеру и наведи её на код пары.
+                </p>
+                <div class="row" style={{ justifyContent: 'center', gap: 7, marginTop: 16 }}>
+                  <IconUsers size={15} color="var(--ink-faint)" />
+                  <span class="faint" style={{ fontSize: 13 }}>
+                    {crew ? `С тобой отметятся ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : 'Отметим только тебя'}
+                  </span>
+                </div>
+                <button class="btn" onClick={onStartScan}
+                  style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  <IconCamera size={19} /> Открыть камеру
+                </button>
               </div>
             ) : (
-              <button class="btn" onClick={onStartScan} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                <IconScan size={20} stroke={2.2} /> Открыть камеру
-              </button>
-            )}
-
-            {/* Инфо — под камерой: кого отмечаем */}
-            <div class="row" style={{ gap: 12, marginTop: 14 }}>
-              <div class="avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{(user?.first_name || 'Я')[0]}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>Отмечаем: {crewLabel}</div>
-                <div class="faint" style={{ fontSize: 12.5 }}>
-                  {crew ? `${crew + 1} ${crew + 1 < 5 ? 'человека' : 'человек'} одним сканом` : 'Только тебя'}
-                </div>
-              </div>
-            </div>
-
-            {/* Табличка статусов: въезжает при поимке QR */}
-            {session !== 'idle' && (
-              <div class="enter" style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div class="row" style={{ justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 700 }}>
-                    <span class="display">{doneCount}</span><span class="faint"> / {targets.length}</span> отмечено
-                  </span>
-                  {session === 'active'
-                    ? <span class="pill"><span class="dot dot-live" /> идёт отметка</span>
-                    : <span class="pill"><span class="dot dot-off" /> завершено</span>}
-                </div>
-                <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {targets.map((t) => (
-                    <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-                      <StatusBadge status={t.status} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {t.is_self ? 'Ты' : t.name}
-                        </div>
-                        <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
-                      </div>
+              /* Камера + статусы */
+              <div style={{ padding: '16px 16px 18px' }}>
+                <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
+                  <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+                  {camStarting && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4 }}><div class="spinner" /></div>
+                  )}
+                  {!camStarting && !camScanning && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
+                      <button class="btn" onClick={onStartScan} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
                     </div>
-                  ))}
+                  )}
+                  {camScanning && (
+                    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 2 }}>
+                      <div class={'lock-frame' + (locked ? ' lock' : '')}>
+                        <div class="corner tl" /><div class="corner tr" /><div class="corner bl" /><div class="corner br" />
+                      </div>
+                      {burst && <div class="lock-burst"><span /><span /></div>}
+                    </div>
+                  )}
+                  {hint && (
+                    <div style={{ position: 'absolute', left: 14, right: 14, bottom: 14, padding: '10px 14px', borderRadius: 'var(--r-sm)',
+                      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', textAlign: 'center', fontSize: 13.5, fontWeight: 600 }}>
+                      {hint}
+                    </div>
+                  )}
+                  {zoomCaps && (
+                    <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12, display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', pointerEvents: 'auto', zIndex: 3 }}>
+                      <span style={{ fontSize: 13, opacity: 0.85 }}>Зум</span>
+                      <input type="range" min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step} value={zoom}
+                        onInput={(e) => applyZoom(parseFloat((e.target as HTMLInputElement).value))}
+                        style={{ flex: 1, accentColor: 'var(--live)' }} />
+                      <span style={{ fontSize: 12, opacity: 0.7, minWidth: 30, textAlign: 'right' }}>{zoom.toFixed(1)}×</span>
+                    </div>
+                  )}
                 </div>
-                {session === 'done' && (
-                  <button class="btn" style={{ marginTop: 4 }} onClick={reset}>Отметить снова</button>
+
+                {/* Кого отмечаем — под камерой */}
+                <div class="row" style={{ gap: 12, marginTop: 14 }}>
+                  <div class="avatar" style={{ width: 38, height: 38, fontSize: 14 }}>{(user?.first_name || 'Я')[0]}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>Отмечаем: {crewLabel}</div>
+                    <div class="faint" style={{ fontSize: 12.5 }}>
+                      {crew ? `${crew + 1} ${crew + 1 < 5 ? 'человека' : 'человек'} одним сканом` : 'Только тебя'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Статусы: въезжают при поимке QR */}
+                {session !== 'idle' && (
+                  <div class="enter" style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div class="row" style={{ justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 700 }}>
+                        <span class="display">{doneCount}</span><span class="faint"> / {targets.length}</span> отмечено
+                      </span>
+                      {session === 'active'
+                        ? <span class="pill"><span class="dot dot-live" /> идёт отметка</span>
+                        : <span class="pill"><span class="dot dot-off" /> завершено</span>}
+                    </div>
+                    <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {targets.map((t) => (
+                        <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
+                          <StatusBadge status={t.status} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {t.is_self ? 'Ты' : t.name}
+                            </div>
+                            <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {session === 'done' && (
+                      <button class="btn" style={{ marginTop: 4 }} onClick={reset}>Отметить снова</button>
+                    )}
+                  </div>
                 )}
               </div>
             )}

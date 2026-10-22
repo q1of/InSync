@@ -65,6 +65,7 @@ async def init_db():
                 success BOOLEAN,
                 error_msg TEXT,
                 scan_id TEXT,            -- группирует все волны одной отметки (QR меняется каждые 5с)
+                lesson_name TEXT,        -- на какой паре (по расписанию во время скана)
                 created_at INTEGER DEFAULT (unixepoch())
             );
         """)
@@ -95,6 +96,8 @@ async def init_db():
             acols = [r["name"] for r in await cur.fetchall()]
         if "scan_id" not in acols:
             await db.execute("ALTER TABLE attendance_log ADD COLUMN scan_id TEXT")
+        if "lesson_name" not in acols:
+            await db.execute("ALTER TABLE attendance_log ADD COLUMN lesson_name TEXT")
 
         # Индексы для быстрых выборок (списки друзей, история отметок)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id, status)")

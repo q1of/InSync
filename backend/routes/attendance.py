@@ -56,7 +56,7 @@ def _is_retriable(success: bool, error: str | None) -> bool:
 
 
 async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
-                          qr_data: str, scan_id: str | None) -> None:
+                          qr_data: str, scan_id: str | None, lesson_name: str | None) -> None:
     """Фоновая запись истории + уведомления — вне критического пути ответа на скан.
 
     При scan_id обновляем строку этой сессии (а не плодим по записи на каждый токен),
@@ -71,26 +71,27 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
                     if scan_id:
                         cur = await db.execute(
                             """UPDATE attendance_log
-                               SET success = ?, error_msg = ?, qr_token = ?, created_at = unixepoch()
+                               SET success = ?, error_msg = ?, qr_token = ?,
+                                   lesson_name = COALESCE(?, lesson_name), created_at = unixepoch()
                                WHERE initiator = ? AND target_user = ? AND scan_id = ?""",
-                            (r["success"], r.get("error"), qr_data,
+                            (r["success"], r.get("error"), qr_data, lesson_name,
                              user.telegram_id, r["telegram_id"], scan_id),
                         )
                         if cur.rowcount == 0:
                             await db.execute(
                                 """INSERT INTO attendance_log
-                                   (initiator, target_user, qr_token, success, error_msg, scan_id)
-                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                   (initiator, target_user, qr_token, success, error_msg, scan_id, lesson_name)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                                 (user.telegram_id, r["telegram_id"], qr_data,
-                                 r["success"], r.get("error"), scan_id),
+                                 r["success"], r.get("error"), scan_id, lesson_name),
                             )
                     else:
                         await db.execute(
                             """INSERT INTO attendance_log
-                               (initiator, target_user, qr_token, success, error_msg)
-                               VALUES (?, ?, ?, ?, ?)""",
+                               (initiator, target_user, qr_token, success, error_msg, lesson_name)
+                               VALUES (?, ?, ?, ?, ?, ?)""",
                             (user.telegram_id, r["telegram_id"], qr_data,
-                             r["success"], r.get("error")),
+                             r["success"], r.get("error"), lesson_name),
                         )
                 await db.commit()
         except Exception as e:
@@ -146,7 +147,7 @@ async def mark_attendance(
 
     # Запись истории + уведомления — В ФОНЕ, чтобы ответ на скан вернулся сразу
     # (запись в SQLite с commit и отправка сообщений не держат критический путь).
-    asyncio.create_task(_log_and_notify(user, raw_results, request.qr_data, request.scan_id))
+    asyncio.create_task(_log_and_notify(user, raw_results, request.qr_data, request.scan_id, request.lesson_name))
 
     return AttendanceResponse(
         results=results,
@@ -170,7 +171,7 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
     """История сканов: что когда отмечено и для кого (с именами и статусом)."""
     async with get_db() as db:
         async with db.execute(
-            """SELECT a.target_user, a.qr_token, a.scan_id, a.success, a.error_msg, a.created_at,
+            """SELECT a.target_user, a.qr_token, a.scan_id, a.success, a.error_msg, a.created_at, a.lesson_name,
                       u.display_name AS target_name
                FROM attendance_log a
                LEFT JOIN users u ON u.telegram_id = a.target_user
@@ -190,9 +191,12 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
             bucket = ("legacy", row["qr_token"], (row["created_at"] or 0) // 120)  # окно 2 минуты
         scan = index.get(bucket)
         if scan is None:
-            scan = {"created_at": row["created_at"], "targets": [], "successful": 0, "total": 0}
+            scan = {"created_at": row["created_at"], "lesson_name": row["lesson_name"],
+                    "targets": [], "successful": 0, "total": 0}
             index[bucket] = scan
             scans.append(scan)
+        elif not scan.get("lesson_name") and row["lesson_name"]:
+            scan["lesson_name"] = row["lesson_name"]
         name = row["target_name"] or ("Вы" if row["target_user"] == user.telegram_id else "Студент")
         if row["target_user"] == user.telegram_id:
             name = "Вы"
