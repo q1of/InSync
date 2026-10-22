@@ -62,3 +62,5 @@ export const IconCalendar = ({ size, color, stroke }: P) => svg(<>
   <path d="M16 2v4M8 2v4M3 10h18" />
 </>, size, color, stroke);
 
+export const IconChevron = ({ size, color, stroke }: P) => svg(<polyline points="6 9 12 15 18 9" />, size, color, stroke);
+

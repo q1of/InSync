@@ -2,34 +2,71 @@ import { useState, useEffect } from 'preact/hooks';
 import { getScheduleApi, getOptoutsApi, setOptoutApi, Lesson } from '../api/client';
 import { HistoryList } from './History';
 import { useTelegram } from '../hooks/useTelegram';
-import { IconCalendar } from '../components/icons';
+import { IconCalendar, IconChevron } from '../components/icons';
 
 function fmtTime(epoch: number | null): string {
   if (!epoch) return '';
   return new Date(epoch * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
-function dayKey(epoch: number | null): string {
-  if (!epoch) return '';
-  return new Date(epoch * 1000).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+
+interface Day { key: string; label: string; tag: string; lessons: Lesson[]; }
+
+function buildDays(lessons: Lesson[]): Day[] {
+  const now = new Date();
+  const todayKey = now.toDateString();
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+  const tomorrowKey = tomorrow.toDateString();
+
+  const map = new Map<string, Lesson[]>();
+  for (const l of lessons) {
+    if (!l.start_epoch) continue;
+    const k = new Date(l.start_epoch * 1000).toDateString();
+    (map.get(k) || map.set(k, []).get(k)!).push(l);
+  }
+  const days: Day[] = [];
+  for (const [k, ls] of map) {
+    const d = new Date(k);
+    const label = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+    const tag = k === todayKey ? 'Сегодня' : k === tomorrowKey ? 'Завтра' : '';
+    days.push({ key: k, label, tag, lessons: ls.sort((a, b) => (a.start_epoch || 0) - (b.start_epoch || 0)) });
+  }
+  days.sort((a, b) => +new Date(a.key) - +new Date(b.key));
+  return days;
 }
 
 export function Lessons() {
   const { haptic } = useTelegram();
-  const [tab, setTab] = useState<'lessons' | 'history'>('lessons');
+  const [tab, setTab] = useState<'schedule' | 'history'>('schedule');
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [off, setOff] = useState<Set<number>>(new Set());   // start_epoch отключённых пар
+  const [open, setOpen] = useState<Set<string>>(new Set()); // раскрытые дни
 
   useEffect(() => {
     getScheduleApi(7).then((r) => setLessons(r.lessons)).catch(() => setLessons([]));
     getOptoutsApi().then((r) => setOff(new Set(r.start_epochs))).catch(() => {});
   }, []);
 
-  const toggle = async (l: Lesson) => {
+  const now = Date.now() / 1000;
+  const upcoming = (lessons || []).filter((l) => (l.end_epoch || l.start_epoch || 0) >= now);
+  const days = buildDays(upcoming);
+
+  // По умолчанию раскрыт первый (ближайший) день.
+  useEffect(() => {
+    if (days.length && open.size === 0) setOpen(new Set([days[0].key]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessons]);
+
+  const toggleDay = (k: string) => {
+    haptic?.selectionChanged?.();
+    setOpen((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  };
+
+  const toggleOptout = async (l: Lesson) => {
     const se = l.start_epoch;
     if (!se) return;
     const enable = !off.has(se);   // не отключена → отключаем отметку
     setOff((prev) => { const n = new Set(prev); enable ? n.add(se) : n.delete(se); return n; });
-    haptic?.selectionChanged?.();
+    haptic?.impactOccurred?.('light');
     try {
       await setOptoutApi({ start_epoch: se, end_epoch: l.end_epoch, lesson_name: l.name, enabled: enable });
     } catch {
@@ -37,61 +74,38 @@ export function Lessons() {
     }
   };
 
-  const now = Date.now() / 1000;
-  const upcoming = (lessons || []).filter((l) => (l.end_epoch || l.start_epoch || 0) >= now);
-  const groups: Record<string, Lesson[]> = {};
-  for (const l of upcoming) (groups[dayKey(l.start_epoch)] ||= []).push(l);
-
   return (
     <div class="screen screen-pad-top">
       <h1 style={{ fontSize: 26, marginBottom: 18 }}>Пары</h1>
 
       <div class="segment" style={{ marginBottom: 20 }}>
-        <div class="thumb" style={{ left: tab === 'lessons' ? 4 : '50%', width: 'calc(50% - 4px)' }} />
-        <button data-active={tab === 'lessons'} onClick={() => setTab('lessons')}>Расписание</button>
+        <div class="thumb" style={{ left: tab === 'schedule' ? 4 : '50%', width: 'calc(50% - 4px)' }} />
+        <button data-active={tab === 'schedule'} onClick={() => setTab('schedule')}>Расписание</button>
         <button data-active={tab === 'history'} onClick={() => setTab('history')}>История</button>
       </div>
 
-      {tab === 'lessons' && (
+      {tab === 'schedule' && (
         <div class="enter">
-          <p class="muted" style={{ fontSize: 13.5, marginBottom: 16, lineHeight: 1.5 }}>
-            Отключи пары, на которых не хочешь отмечаться. Тебя не отметят — ни ты сам, ни друзья.
-          </p>
-
           {lessons == null ? (
             <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>
-          ) : upcoming.length === 0 ? (
+          ) : days.length === 0 ? (
             <div class="empty">
               <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}><IconCalendar size={44} color="var(--ink-faint)" /></div>
               <h3 style={{ color: 'var(--ink)', fontSize: 17, marginBottom: 6 }}>Пар не нашлось</h3>
               <p style={{ fontSize: 14 }}>Ближайшие занятия из Пульса появятся здесь</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-              {Object.entries(groups).map(([day, items]) => (
-                <div key={day}>
-                  <p class="eyebrow" style={{ marginBottom: 10, textTransform: 'capitalize' }}>{day}</p>
-                  <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {items.map((l) => {
-                      const isOff = off.has(l.start_epoch || 0);
-                      return (
-                        <div key={l.start_epoch} class="panel" style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12, opacity: isOff ? 0.6 : 1 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
-                            <div class="faint" style={{ fontSize: 13 }}>
-                              {fmtTime(l.start_epoch)}{l.end_epoch ? `–${fmtTime(l.end_epoch)}` : ''}
-                              {l.room ? ` · ${l.room}` : ''}
-                              {isOff ? ' · не отмечаюсь' : ''}
-                            </div>
-                          </div>
-                          <div class="toggle" data-on={isOff} onClick={() => toggle(l)} title="Не отмечаться на этой паре" />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <>
+              <p class="muted" style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
+                Твоё расписание на неделю. Открой день и отключи пары, на которых не хочешь отмечаться.
+              </p>
+              <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {days.map((d) => (
+                  <DayCard key={d.key} day={d} open={open.has(d.key)} offSet={off}
+                           onToggleDay={() => toggleDay(d.key)} onToggleOptout={toggleOptout} />
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -101,4 +115,63 @@ export function Lessons() {
       )}
     </div>
   );
+}
+
+function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
+  day: Day; open: boolean; offSet: Set<number>;
+  onToggleDay: () => void; onToggleOptout: (l: Lesson) => void;
+}) {
+  const offCount = day.lessons.filter((l) => offSet.has(l.start_epoch || 0)).length;
+  return (
+    <div class="panel" style={{ padding: 0, overflow: 'hidden' }}>
+      <button onClick={onToggleDay} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+        padding: '15px 16px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink)', textAlign: 'left' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15.5, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {day.tag && <span style={{ color: 'var(--live)' }}>{day.tag} · </span>}{day.label}
+          </div>
+          <div class="faint" style={{ fontSize: 13, marginTop: 2 }}>
+            {day.lessons.length} {plural(day.lessons.length, 'пара', 'пары', 'пар')}
+            {offCount > 0 ? ` · ${offCount} без отметки` : ''}
+          </div>
+        </div>
+        <span style={{ display: 'flex', transition: 'transform 0.22s', transform: open ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }}>
+          <IconChevron size={20} />
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ padding: '0 10px 10px' }}>
+          {day.lessons.map((l) => {
+            const isOff = offSet.has(l.start_epoch || 0);
+            return (
+              <div key={l.start_epoch} class="row" style={{ alignItems: 'stretch', gap: 12, padding: '11px 6px',
+                borderTop: '1px solid var(--hairline)', opacity: isOff ? 0.55 : 1 }}>
+                <div style={{ width: 52, flex: 'none', textAlign: 'right', paddingTop: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
+                  <div class="faint" style={{ fontSize: 12 }}>{fmtTime(l.end_epoch)}</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3 }}>{l.name}</div>
+                  <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
+                    {[l.type, l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
+                  </div>
+                  {isOff && <div style={{ fontSize: 12, marginTop: 4, color: 'var(--warn)' }}>не отмечаюсь на этой паре</div>}
+                </div>
+                <div class="toggle" data-on={isOff} onClick={() => onToggleOptout(l)}
+                     title="Не отмечаться на этой паре" style={{ alignSelf: 'center', flex: 'none' }} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
 }
