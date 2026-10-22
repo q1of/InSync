@@ -237,6 +237,22 @@ def _http_cookies(session_cookies: dict) -> httpx.Cookies:
     return jar
 
 
+# Общий пул соединений к pulse.mirea.ru: переиспользуем TLS/TCP между запросами
+# (не делаем новое рукопожатие на каждую отметку/профиль). Куки остаются
+# изолированы в jar каждого клиента — пул хранит только соединения.
+_pulse_transport: httpx.AsyncHTTPTransport | None = None
+
+
+def _get_transport() -> httpx.AsyncHTTPTransport:
+    global _pulse_transport
+    if _pulse_transport is None:
+        _pulse_transport = httpx.AsyncHTTPTransport(
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50,
+                                keepalive_expiry=60.0),
+        )
+    return _pulse_transport
+
+
 class PulseClient:
     """gRPC-Web клиент поверх cookies сессии Пульса."""
 
@@ -247,13 +263,13 @@ class PulseClient:
             timeout=httpx.Timeout(30.0, connect=10.0),
             headers={"User-Agent": UA, "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"},
             cookies=_http_cookies(self.session_cookies),
+            transport=_get_transport(),
         )
 
     async def close(self):
-        try:
-            await self.client.aclose()
-        except Exception:
-            pass
+        # Соединения живут в общем пуле (_pulse_transport) и переиспользуются,
+        # поэтому сам клиент не закрываем — иначе порвём keep-alive к Пульсу.
+        return
 
     def _bearer(self) -> str | None:
         tok = (self.session_cookies.get("access_token") or "").strip()

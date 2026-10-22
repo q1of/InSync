@@ -86,6 +86,11 @@ async def init_db():
         if "scan_id" not in acols:
             await db.execute("ALTER TABLE attendance_log ADD COLUMN scan_id TEXT")
 
+        # Индексы для быстрых выборок (списки друзей, история отметок)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id, status)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id, status)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_initiator ON attendance_log(initiator, scan_id)")
+
         await db.commit()
 
 async def get_user(telegram_id: int) -> Optional[aiosqlite.Row]:

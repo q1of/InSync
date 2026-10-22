@@ -1,4 +1,5 @@
 import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,6 +15,12 @@ from backend.database import upsert_user, update_session, get_user, clear_sessio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Короткие кеши, чтобы не дёргать Пульс на каждый открытый профиль.
+_SESSION_CHECK_TTL = 60      # проверка живости сессии
+_SCHEDULE_TTL = 3600         # расписание меняется редко
+_session_check_cache: dict[int, tuple[float, dict]] = {}
+_schedule_cache: dict[tuple[int, int], tuple[float, list]] = {}
 
 
 async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | None) -> LoginResponse:
@@ -104,6 +111,9 @@ async def logout(user: TelegramUser = Depends(get_current_user)):
     """Выход — удаляет сессию из БД и кеша."""
     await clear_session(user.telegram_id)
     await session_cache.invalidate(user.telegram_id)
+    _session_check_cache.pop(user.telegram_id, None)
+    for k in [k for k in _schedule_cache if k[0] == user.telegram_id]:
+        _schedule_cache.pop(k, None)
     return {"success": True}
 
 
@@ -135,16 +145,24 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
     if not check:
         return SessionStatus(**base, valid=True)
 
-    status = await mirea_service.check_session(cookies)
-    new_cookies = status.get("cookies")
-    if status["valid"] and new_cookies and new_cookies != cookies:
-        # Пульс выдал свежую .AspNetCore.Cookies — сохраняем
-        await update_session(user.telegram_id, mirea_service.encrypt_session(new_cookies))
-        await session_cache.set_decrypted(user.telegram_id, new_cookies)
+    # Кеш проверки живости на 60с — профиль не дёргает Пульс на каждом открытии.
+    cached = _session_check_cache.get(user.telegram_id)
+    if cached and time.time() - cached[0] < _SESSION_CHECK_TTL:
+        status = cached[1]
+    else:
+        status = await mirea_service.check_session(cookies)
+        _session_check_cache[user.telegram_id] = (time.time(), status)
+        new_cookies = status.get("cookies")
+        if status["valid"] and new_cookies and new_cookies != cookies:
+            # Пульс выдал свежую .AspNetCore.Cookies — сохраняем
+            await update_session(user.telegram_id, mirea_service.encrypt_session(new_cookies))
+            await session_cache.set_decrypted(user.telegram_id, new_cookies)
+        if status["valid"]:
+            await upsert_user(user.telegram_id, user.display_name,
+                              group_name=status.get("group_name"), full_name=status.get("full_name"),
+                              username=user.username)
+
     if status["valid"]:
-        await upsert_user(user.telegram_id, user.display_name,
-                          group_name=status.get("group_name"), full_name=status.get("full_name"),
-                          username=user.username)
         base["full_name"] = status.get("full_name") or base["full_name"]
         base["group_name"] = status.get("group_name") or base["group_name"]
 
@@ -157,7 +175,13 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
 
 @router.get("/schedule")
 async def schedule(days: int = 7, user: TelegramUser = Depends(get_current_user)):
-    """Расписание студента на N дней (живой запрос в Пульс)."""
+    """Расписание студента на N дней. Кешируется на час (меняется редко)."""
+    days = max(1, min(days, 14))
+    key = (user.telegram_id, days)
+    cached = _schedule_cache.get(key)
+    if cached and time.time() - cached[0] < _SCHEDULE_TTL:
+        return {"lessons": cached[1]}
+
     cookies = await session_cache.get_session(user.telegram_id)
     if not cookies:
         db_user = await get_user(user.telegram_id)
@@ -170,5 +194,6 @@ async def schedule(days: int = 7, user: TelegramUser = Depends(get_current_user)
                 await session_cache.set_decrypted(user.telegram_id, cookies)
     if not cookies:
         raise HTTPException(status_code=401, detail="Нет активной сессии")
-    lessons = await mirea_service.fetch_schedule(cookies, days=max(1, min(days, 14)))
+    lessons = await mirea_service.fetch_schedule(cookies, days=days)
+    _schedule_cache[key] = (time.time(), lessons)
     return {"lessons": lessons}
