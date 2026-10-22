@@ -168,7 +168,7 @@ async def process_password(message: types.Message, state: FSMContext):
     ])
     
     await msg.edit_text(
-        f"✔ Авторизация успешна!\n\nС возвращением, {result.get('full_name') or message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
+        f"✔️ Авторизация успешна!\n\nС возвращением, {result.get('full_name') or message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
         reply_markup=kb
     )
 
@@ -215,7 +215,7 @@ async def process_2fa(message: types.Message, state: FSMContext):
     ])
     
     await msg.edit_text(
-        f"✔ Авторизация успешна!\n\nС возвращением, {result.get('full_name') or message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
+        f"✔️ Авторизация успешна!\n\nС возвращением, {result.get('full_name') or message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
         reply_markup=kb
     )
 

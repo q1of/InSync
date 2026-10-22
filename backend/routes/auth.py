@@ -44,7 +44,7 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
         try:
             await bot.send_message(
                 user.telegram_id,
-                f"✔ Вход через Пульс МИРЭА выполнен!\n\n"
+                f"✔️ Вход через Пульс МИРЭА выполнен!\n\n"
                 f"{result.get('full_name') or user.display_name}, теперь можно пользоваться InSync.",
             )
         except Exception:
@@ -162,15 +162,29 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
                               group_name=status.get("group_name"), full_name=status.get("full_name"),
                               username=user.username)
 
-    if status["valid"]:
-        base["full_name"] = status.get("full_name") or base["full_name"]
-        base["group_name"] = status.get("group_name") or base["group_name"]
+    if not status["valid"]:
+        # Отличаем реальный слёт сессии от временного сбоя сети, чтобы не уводить зря.
+        err = (status.get("error") or "").lower()
+        if any(x in err for x in ("сесси", "войд", "истек", "перезай")):
+            await clear_session(user.telegram_id)
+            await session_cache.invalidate(user.telegram_id)
+            _session_check_cache.pop(user.telegram_id, None)
+            from backend.main import bot
+            if bot:
+                try:
+                    await bot.send_message(
+                        user.telegram_id,
+                        "⚠️ Сессия Пульса МИРЭА слетела — нужно войти заново. Нажмите /start.",
+                    )
+                except Exception:
+                    pass
+            return SessionStatus(**{**base, "logged_in": False, "valid": False})
+        # Иначе, вероятно, временный сбой сети — сессию не трогаем.
+        return SessionStatus(**base, valid=False, expires_in_seconds=None)
 
-    return SessionStatus(
-        **base,
-        valid=status["valid"],
-        expires_in_seconds=None,
-    )
+    base["full_name"] = status.get("full_name") or base["full_name"]
+    base["group_name"] = status.get("group_name") or base["group_name"]
+    return SessionStatus(**base, valid=True, expires_in_seconds=None)
 
 
 @router.get("/schedule")

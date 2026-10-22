@@ -157,10 +157,11 @@ async def check_session(cookies: dict) -> dict[str, Any]:
         refreshed_at = int(cookies.get("__token_refreshed_at") or 0)
         age = int(time.time()) - refreshed_at if refreshed_at else 0
         return {"valid": me["valid"], "age_seconds": age, "cookies": me.get("cookies"),
-                "full_name": me.get("full_name"), "group_name": me.get("group_name")}
+                "full_name": me.get("full_name"), "group_name": me.get("group_name"),
+                "error": me.get("error")}
     except Exception as e:
         logger.error("Check session failed: %s", e)
-        return {"valid": False, "age_seconds": 0, "cookies": None}
+        return {"valid": False, "age_seconds": 0, "cookies": None, "error": str(e)}
 
 
 async def fetch_schedule(cookies: dict, days: int = 7) -> list[dict]:
