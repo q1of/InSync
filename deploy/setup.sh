@@ -74,6 +74,7 @@ ${DOMAIN} {
     handle {
         root * /var/www/insync
         try_files {path} /index.html
+        header Cache-Control "no-store"   # не кэшируем — свежая версия после каждого деплоя
         file_server
     }
 }
