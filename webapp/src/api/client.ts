@@ -1,7 +1,20 @@
 const getInitData = (): string => {
-  if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
-    return (window as any).Telegram.WebApp.initData || '';
-  }
+  if (typeof window === 'undefined') return '';
+  // 1) штатно — из SDK Telegram
+  const tg = (window as any).Telegram?.WebApp;
+  if (tg?.initData) return tg.initData;
+  // 2) фолбэк — из хэша URL (tgWebAppData). Работает, даже если telegram-web-app.js
+  //    не загрузился (напр. telegram.org недоступен/медленный в сети пользователя).
+  try {
+    const h = (window.location.hash || '').replace(/^#/, '');
+    const d = new URLSearchParams(h).get('tgWebAppData');
+    if (d) return d;
+  } catch {}
+  // 3) иногда данные лежат в query (?tgWebAppData=...)
+  try {
+    const d = new URLSearchParams(window.location.search || '').get('tgWebAppData');
+    if (d) return d;
+  } catch {}
   return '';
 };
 
