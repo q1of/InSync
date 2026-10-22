@@ -333,6 +333,42 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 
 ::-webkit-scrollbar { width: 0; height: 0; }
 
+/* ---------- выделение текста (серое, на весь сайт) ---------- */
+::selection { background: rgba(170, 172, 182, 0.30); color: var(--ink); }
+::-moz-selection { background: rgba(170, 172, 182, 0.30); color: var(--ink); }
+
+/* ---------- hero сканера (живая центральная «цель») ---------- */
+.hero-stage { position: relative; height: 196px; display: grid; place-items: center; }
+.hero-orbit {
+  position: absolute; width: 250px; height: 150px; color: var(--hairline-2);
+  transform-origin: center;
+}
+.hero-orbit.a { animation: spin 17s linear infinite; }
+.hero-orbit.b { animation: spin 24s linear infinite reverse; opacity: 0.8; }
+.hero-orbit .ring { fill: none; stroke: currentColor; stroke-width: 1; }
+.hero-orbit .bead { fill: var(--ink); }
+.hero-glow {
+  position: absolute; width: 150px; height: 150px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 62%);
+  animation: heroGlow 4.6s ease-in-out infinite;
+}
+.hero-tile {
+  position: relative; width: 94px; height: 94px; border-radius: 26px;
+  display: grid; place-items: center; overflow: hidden; color: var(--ink);
+  background: linear-gradient(158deg, #1c1c21, #0b0b0e);
+  border: 1px solid var(--hairline-2);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: heroFloat 5s ease-in-out infinite;
+}
+.hero-scan {
+  position: absolute; left: 0; right: 0; height: 40%; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.18), transparent);
+  animation: heroScan 2.8s ease-in-out infinite;
+}
+@keyframes heroFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes heroGlow { 0%, 100% { opacity: 0.35; transform: scale(0.95); } 50% { opacity: 0.6; transform: scale(1.1); } }
+@keyframes heroScan { 0% { transform: translateY(-130%); } 50% { transform: translateY(230%); } 100% { transform: translateY(-130%); } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }

@@ -260,25 +260,24 @@ export function Scanner({ active }: Props) {
   return (
     <div class="screen screen-pad-top">
       {/* Hero — «на месте одним касанием» */}
-      <div class="panel enter" style={{ padding: 24, overflow: 'hidden' }}>
-        <div class="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
-          <span class="eyebrow">Посещаемость</span>
-          <span class="pill"><span class="dot dot-live" /> МИРЭА подключена</span>
-        </div>
-
-        <div style={{ position: 'relative', height: 160, display: 'grid', placeItems: 'center' }}>
-          <svg width="250" height="150" viewBox="0 0 250 150" style={{ position: 'absolute', opacity: 0.55 }}>
-            <ellipse cx="125" cy="75" rx="112" ry="52" transform="rotate(-18 125 75)" fill="none" stroke="var(--hairline-2)" />
-            <ellipse cx="125" cy="75" rx="112" ry="46" transform="rotate(20 125 75)" fill="none" stroke="var(--hairline-2)" />
+      <div class="panel enter" style={{ padding: 26, overflow: 'hidden' }}>
+        <div class="hero-stage">
+          <svg class="hero-orbit a" viewBox="0 0 250 150">
+            <ellipse class="ring" cx="125" cy="75" rx="112" ry="40" transform="rotate(-22 125 75)" />
+            <circle class="bead" cx="237" cy="75" r="3" transform="rotate(-22 125 75)" />
           </svg>
-          <div style={{ width: 88, height: 88, borderRadius: 24, display: 'grid', placeItems: 'center',
-            background: 'linear-gradient(160deg, var(--bg-2), #0d1017)', border: '1px solid var(--hairline)',
-            boxShadow: '0 14px 44px rgba(0,0,0,0.55)' }}>
-            <IconScan size={42} color="var(--sig-b)" stroke={1.8} />
+          <svg class="hero-orbit b" viewBox="0 0 250 150">
+            <ellipse class="ring" cx="125" cy="75" rx="112" ry="40" transform="rotate(24 125 75)" />
+            <circle class="bead" cx="13" cy="75" r="2.5" transform="rotate(24 125 75)" />
+          </svg>
+          <div class="hero-glow" />
+          <div class="hero-tile">
+            <IconScan size={42} stroke={1.7} />
+            <div class="hero-scan" />
           </div>
         </div>
 
-        <h1 style={{ fontSize: 33, lineHeight: 1.06, textAlign: 'center', marginTop: 4 }}>
+        <h1 style={{ fontSize: 33, lineHeight: 1.06, textAlign: 'center', marginTop: 8 }}>
           На&nbsp;месте<br /><span class="sig-text">одним касанием</span>
         </h1>
         <p class="muted" style={{ textAlign: 'center', fontSize: 14.5, lineHeight: 1.5, maxWidth: 300, margin: '13px auto 0' }}>
@@ -296,15 +295,6 @@ export function Scanner({ active }: Props) {
         <div class="row" style={{ justifyContent: 'center', gap: 8, marginTop: 16 }}>
           <IconCheck size={14} color="var(--ink-faint)" stroke={2.6} />
           <span class="faint" style={{ fontSize: 13 }}>Результат отметки появится здесь</span>
-        </div>
-      </div>
-
-      {/* Кого отмечаем — быстрый факт */}
-      <div class="panel" style={{ marginTop: 14, padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div class="avatar" style={{ width: 40, height: 40, fontSize: 15 }}>{(user?.first_name || 'Я')[0]}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600 }}>Отмечаем: {crewLabel}</div>
-          <div class="faint" style={{ fontSize: 13 }}>{crew ? 'Кого отмечать — во вкладке «Друзья»' : 'Пока отмечаем только тебя'}</div>
         </div>
       </div>
 
