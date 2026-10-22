@@ -7,7 +7,7 @@
 import base64
 
 from backend.services.mirea_client import extract_qr_token, SessionCrypto
-from backend.services.pulse_auth import _otp_challenge, code_hint
+from backend.services.pulse_auth import _otp_challenge
 from backend.routes.attendance import _is_retriable
 
 UUID = "12345678-1234-1234-1234-123456789abc"
