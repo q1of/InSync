@@ -13,15 +13,8 @@ class Settings:
     bot_token: str = os.getenv("BOT_TOKEN", "")
     webapp_url: str = os.getenv("WEBAPP_URL", "")
     session_keys: str = os.getenv("SESSION_KEYS", "")
-    mirea_proxy: str = os.getenv("MIREA_PROXY", "")
     friend_limit: int = int(os.getenv("FRIEND_LIMIT", "30"))
     database_path: str = os.getenv("DATABASE_PATH", "./data/insync.db")
 
 
 settings = Settings()
-
-# MIREA_PROXY читается напрямую из окружения модулями клиента (mirea_client,
-# pulse_auth). Прокидываем его туда через переменную окружения, чтобы не
-# тащить зависимость на этот модуль.
-if settings.mirea_proxy:
-    os.environ.setdefault("MIREA_PROXY", settings.mirea_proxy)

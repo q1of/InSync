@@ -237,10 +237,6 @@ def _http_cookies(session_cookies: dict) -> httpx.Cookies:
     return jar
 
 
-def _proxy() -> str | None:
-    return os.getenv("MIREA_PROXY") or None
-
-
 class PulseClient:
     """gRPC-Web клиент поверх cookies сессии Пульса."""
 
@@ -251,7 +247,6 @@ class PulseClient:
             timeout=httpx.Timeout(30.0, connect=10.0),
             headers={"User-Agent": UA, "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"},
             cookies=_http_cookies(self.session_cookies),
-            proxy=_proxy(),
         )
 
     async def close(self):

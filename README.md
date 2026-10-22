@@ -61,7 +61,6 @@ copy backend\.env.example backend\.env
 | `BOT_TOKEN`     | Токен бота от [@BotFather](https://t.me/BotFather)                |
 | `WEBAPP_URL`    | Публичный адрес webapp (ngrok-URL, он же в настройках Mini App)    |
 | `SESSION_KEYS`  | Ключ шифрования сессий (32 байта в base64)                        |
-| `MIREA_PROXY`   | Прокси для `pulse.mirea.ru` (опционально)                         |
 | `FRIEND_LIMIT`  | Лимит друзей на пользователя (по умолчанию 30)                    |
 | `DATABASE_PATH` | Путь к базе SQLite                                                |
 

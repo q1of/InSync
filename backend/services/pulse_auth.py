@@ -226,7 +226,6 @@ def _make_client() -> httpx.AsyncClient:
         headers={"User-Agent": UA,
                  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                  "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"},
-        proxy=os.getenv("MIREA_PROXY") or None,
     )
 
 
@@ -300,7 +299,7 @@ class PulseLogin:
         except httpx.HTTPError as e:
             logger.error("Нет связи с МИРЭА на старте: %s", e)
             return LoginOutcome(error=f"Не удалось подключиться к МИРЭА ({type(e).__name__}). "
-                                      "Проверьте интернет; из дата-центров Пульс часто закрыт — нужен прокси (MIREA_PROXY).")
+                                      "Проверьте доступность pulse.mirea.ru с сервера.")
 
         if _host(page.url) != "sso.mirea.ru":
             _trace(page, "start")
