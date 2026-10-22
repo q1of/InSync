@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +12,11 @@ from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
 from backend.database import get_db, opted_out_now
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
+
+# Сериализует запись истории: волны одного скана идут последовательно и не плодят дубли.
+_LOG_LOCK = asyncio.Lock()
 
 
 async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict]) -> None:
@@ -48,6 +54,49 @@ def _is_retriable(success: bool, error: str | None) -> bool:
     return True
 
 
+async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
+                          qr_data: str, scan_id: str | None) -> None:
+    """Фоновая запись истории + уведомления — вне критического пути ответа на скан.
+
+    При scan_id обновляем строку этой сессии (а не плодим по записи на каждый токен),
+    чтобы в истории была одна отметка с финальным статусом. Лок сериализует волны.
+    """
+    async with _LOG_LOCK:
+        try:
+            async with get_db() as db:
+                for r in raw_results:
+                    if r.get("opted_out"):
+                        continue  # сам отключил пару — это не попытка отметки, не пишем
+                    if scan_id:
+                        cur = await db.execute(
+                            """UPDATE attendance_log
+                               SET success = ?, error_msg = ?, qr_token = ?, created_at = unixepoch()
+                               WHERE initiator = ? AND target_user = ? AND scan_id = ?""",
+                            (r["success"], r.get("error"), qr_data,
+                             user.telegram_id, r["telegram_id"], scan_id),
+                        )
+                        if cur.rowcount == 0:
+                            await db.execute(
+                                """INSERT INTO attendance_log
+                                   (initiator, target_user, qr_token, success, error_msg, scan_id)
+                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                (user.telegram_id, r["telegram_id"], qr_data,
+                                 r["success"], r.get("error"), scan_id),
+                            )
+                    else:
+                        await db.execute(
+                            """INSERT INTO attendance_log
+                               (initiator, target_user, qr_token, success, error_msg)
+                               VALUES (?, ?, ?, ?, ?)""",
+                            (user.telegram_id, r["telegram_id"], qr_data,
+                             r["success"], r.get("error")),
+                        )
+                await db.commit()
+        except Exception as e:
+            logger.error("attendance log failed: %s", e)
+    await _notify_marked_friends(user, raw_results)
+
+
 @router.post("/mark", response_model=AttendanceResponse)
 async def mark_attendance(
     request: AttendanceRequest,
@@ -82,43 +131,6 @@ async def mark_attendance(
                 "error": f"Отключил отметку на этой паре ({opted[tid]})", "opted_out": True,
             })
 
-    # Логируем результаты. При scan_id — обновляем строку этой сессии (а не плодим
-    # по записи на каждый токен), чтобы в истории была одна отметка с финальным статусом.
-    async with get_db() as db:
-        for r in raw_results:
-            if r.get("opted_out"):
-                continue  # сам отключил пару — это не попытка отметки, в историю не пишем
-            if request.scan_id:
-                cur = await db.execute(
-                    """UPDATE attendance_log
-                       SET success = ?, error_msg = ?, qr_token = ?, created_at = unixepoch()
-                       WHERE initiator = ? AND target_user = ? AND scan_id = ?""",
-                    (r["success"], r.get("error"), request.qr_data,
-                     user.telegram_id, r["telegram_id"], request.scan_id),
-                )
-                if cur.rowcount == 0:
-                    await db.execute(
-                        """INSERT INTO attendance_log
-                           (initiator, target_user, qr_token, success, error_msg, scan_id)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
-                        (user.telegram_id, r["telegram_id"], request.qr_data,
-                         r["success"], r.get("error"), request.scan_id),
-                    )
-            else:
-                await db.execute(
-                    """INSERT INTO attendance_log
-                       (initiator, target_user, qr_token, success, error_msg)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (user.telegram_id, r["telegram_id"], request.qr_data,
-                     r["success"], r.get("error")),
-                )
-        await db.commit()
-
-    # Уведомляем отмеченных друзей в Telegram в ФОНЕ — чтобы не задерживать
-    # ответ на отметку (иначе сканер «лагает», ожидая отправку сообщений).
-    import asyncio
-    asyncio.create_task(_notify_marked_friends(user, raw_results))
-
     results = [
         AttendanceResult(
             user_name=r["user_name"],
@@ -131,11 +143,23 @@ async def mark_attendance(
         for r in raw_results
     ]
 
+    # Запись истории + уведомления — В ФОНЕ, чтобы ответ на скан вернулся сразу
+    # (запись в SQLite с commit и отправка сообщений не держат критический путь).
+    asyncio.create_task(_log_and_notify(user, raw_results, request.qr_data, request.scan_id))
+
     return AttendanceResponse(
         results=results,
         total=len(results),
         successful=sum(1 for r in results if r.success),
     )
+
+
+@router.post("/prewarm")
+async def prewarm(user: TelegramUser = Depends(get_current_user)):
+    """Прогрев перед сканом: расшифровать и закешировать сессии (свою + друзей),
+    чтобы ПЕРВАЯ отметка не платила за расшифровку. Фронт зовёт при открытии сканера."""
+    sessions = await session_cache.get_all_sessions_for_mark(user.telegram_id)
+    return {"ready": len(sessions)}
 
 
 @router.get("/history")
@@ -144,7 +168,7 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
     async with get_db() as db:
         async with db.execute(
             """SELECT a.target_user, a.qr_token, a.scan_id, a.success, a.error_msg, a.created_at,
-                      COALESCE(u.full_name, u.display_name) AS target_name
+                      u.display_name AS target_name
                FROM attendance_log a
                LEFT JOIN users u ON u.telegram_id = a.target_user
                WHERE a.initiator = ?

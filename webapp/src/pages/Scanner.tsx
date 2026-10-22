@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
-import { markAttendanceApi, getFriendsApi } from '../api/client';
+import { markAttendanceApi, getFriendsApi, prewarmApi } from '../api/client';
 import type { Friend } from '../api/client';
 import { IconCheck, IconX } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
@@ -67,6 +67,8 @@ export function Scanner({ active }: Props) {
     getFriendsApi()
       .then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled)))
       .catch(() => setEnabledFriends([]));
+    // Прогрев сессий в кеш — первая отметка не будет платить за расшифровку.
+    prewarmApi().catch(() => {});
   }, []);
 
   const buildTargets = (): Target[] => {

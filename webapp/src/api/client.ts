@@ -60,7 +60,6 @@ export interface SessionStatus {
   valid: boolean;
   updated_at?: number | null;
   expires_in_seconds?: number | null;
-  full_name?: string | null;
   group_name?: string | null;
   mirea_login?: string | null;
 }
@@ -98,6 +97,9 @@ export interface MarkResult {
 export interface MarkResponse { results: MarkResult[]; total: number; successful: number; }
 
 // only — подмножество telegram_id (повтор только непрошедшим); scanId — склейка волн в истории
+// Прогрев сессий в кеш перед сканом (чтобы первая отметка была быстрой)
+export const prewarmApi = () => api<{ ready: number }>('POST', '/attendance/prewarm');
+
 export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scanId?: string }) =>
   api<MarkResponse>('POST', '/attendance/mark', {
     qr_data: qrData,

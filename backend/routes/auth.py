@@ -33,7 +33,6 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
         display_name=user.display_name,
         mirea_login=mirea_login,
         group_name=result.get("group_name"),
-        full_name=result.get("full_name"),
         username=user.username,
     )
     await update_session(user.telegram_id, encrypted)
@@ -45,7 +44,7 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
             await bot.send_message(
                 user.telegram_id,
                 f"✔️ Вход через Пульс МИРЭА выполнен!\n\n"
-                f"{result.get('full_name') or user.display_name}, теперь можно пользоваться InSync.",
+                f"{user.display_name}, теперь можно пользоваться InSync.",
             )
         except Exception:
             pass
@@ -56,7 +55,6 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
         user_info=UserInfo(
             display_name=user.display_name,
             group_name=result.get("group_name"),
-            full_name=result.get("full_name"),
             session_valid=True,
         ),
     )
@@ -127,7 +125,6 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
     base = dict(
         logged_in=True,
         updated_at=db_user["session_updated_at"],
-        full_name=db_user["full_name"],
         group_name=db_user["group_name"],
         mirea_login=db_user["mirea_login"],
     )
@@ -159,8 +156,7 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
             await session_cache.set_decrypted(user.telegram_id, new_cookies)
         if status["valid"]:
             await upsert_user(user.telegram_id, user.display_name,
-                              group_name=status.get("group_name"), full_name=status.get("full_name"),
-                              username=user.username)
+                              group_name=status.get("group_name"), username=user.username)
 
     if not status["valid"]:
         # Отличаем реальный слёт сессии от временного сбоя сети, чтобы не уводить зря.
@@ -182,7 +178,6 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
         # Иначе, вероятно, временный сбой сети — сессию не трогаем.
         return SessionStatus(**base, valid=False, expires_in_seconds=None)
 
-    base["full_name"] = status.get("full_name") or base["full_name"]
     base["group_name"] = status.get("group_name") or base["group_name"]
     return SessionStatus(**base, valid=True, expires_in_seconds=None)
 

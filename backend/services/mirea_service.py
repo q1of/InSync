@@ -51,13 +51,12 @@ async def _cleanup_pending() -> None:
 
 
 async def _success_payload(cookies: dict) -> dict[str, Any]:
-    # Профиль (ФИО/группа) — один лёгкий запрос. Расписание НЕ тянем здесь,
+    # Профиль (группа) — один лёгкий запрос. Расписание НЕ тянем здесь,
     # чтобы вход был быстрым: оно грузится по запросу через /api/auth/schedule.
     profile = await parse_user_profile(cookies, with_schedule=False)
     return {"success": True, "needs_2fa": False,
             "tokens": profile.get("cookies", cookies),
-            "group_name": profile.get("group_name"),
-            "full_name": profile.get("full_name")}
+            "group_name": profile.get("group_name")}
 
 
 async def login(username: str, password: str, owner_id: int | None = None) -> dict[str, Any]:
@@ -133,7 +132,7 @@ async def resend_2fa(challenge_id: str, owner_id: int | None = None) -> dict[str
 
 
 async def parse_user_profile(cookies: dict, with_schedule: bool = False) -> dict[str, Any]:
-    """ФИО и группа (и опционально расписание) после входа."""
+    """Группа (и опционально расписание) после входа."""
     try:
         me = await get_me(cookies)
         merged = me.get("cookies", cookies)
@@ -143,11 +142,10 @@ async def parse_user_profile(cookies: dict, with_schedule: bool = False) -> dict
                 sched = await get_schedule(merged, days=7)
             except Exception as e:
                 logger.warning("schedule fetch failed: %s", e)
-        return {"group_name": me.get("group_name"), "full_name": me.get("full_name"),
-                "cookies": merged, "schedule": sched}
+        return {"group_name": me.get("group_name"), "cookies": merged, "schedule": sched}
     except Exception as e:
         logger.warning("Failed to parse user profile: %s", e)
-        return {"group_name": None, "full_name": None, "cookies": cookies, "schedule": []}
+        return {"group_name": None, "cookies": cookies, "schedule": []}
 
 
 async def check_session(cookies: dict) -> dict[str, Any]:
@@ -157,8 +155,7 @@ async def check_session(cookies: dict) -> dict[str, Any]:
         refreshed_at = int(cookies.get("__token_refreshed_at") or 0)
         age = int(time.time()) - refreshed_at if refreshed_at else 0
         return {"valid": me["valid"], "age_seconds": age, "cookies": me.get("cookies"),
-                "full_name": me.get("full_name"), "group_name": me.get("group_name"),
-                "error": me.get("error")}
+                "group_name": me.get("group_name"), "error": me.get("error")}
     except Exception as e:
         logger.error("Check session failed: %s", e)
         return {"valid": False, "age_seconds": 0, "cookies": None, "error": str(e)}

@@ -4,7 +4,6 @@ from typing import Optional, List
 class UserInfo(BaseModel):
     display_name: str
     group_name: Optional[str] = None
-    full_name: Optional[str] = None
     session_valid: bool = False
     session_updated_at: Optional[int] = None
 
@@ -54,7 +53,6 @@ class LoginResponse(BaseModel):
                     "user_info": {
                         "display_name": "Ivan",
                         "group_name": "IKBO-01-22",
-                        "full_name": "Ivanov Ivan Ivanovich",
                         "session_valid": True,
                         "session_updated_at": 1690000000
                     }
@@ -136,6 +134,5 @@ class SessionStatus(BaseModel):
     valid: bool = False              # сессия реально живая (проверено на pulse.mirea.ru)
     updated_at: Optional[int] = None
     expires_in_seconds: Optional[int] = None
-    full_name: Optional[str] = None
     group_name: Optional[str] = None
     mirea_login: Optional[str] = None

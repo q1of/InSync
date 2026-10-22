@@ -97,7 +97,7 @@ async def start_cmd(message: types.Message, state: FSMContext):
                 web_app=WebAppInfo(url=settings.webapp_url),
             )]
         ])
-        name = user["full_name"] or message.from_user.first_name
+        name = message.from_user.first_name
         await message.answer(
             f"С возвращением, {name}!\n\nInSync - Для студентов МИРЭА\n\n• Отметка по QR-коду\n• Отметка за себя и друзей\n• Без очередей и зависаний",
             reply_markup=kb,
@@ -153,23 +153,22 @@ async def process_password(message: types.Message, state: FSMContext):
         display_name=message.from_user.username or message.from_user.first_name,
         mirea_login=login,
         group_name=result.get("group_name"),
-        full_name=result.get("full_name"),
         username=message.from_user.username,
     )
     await update_session(message.from_user.id, encrypted)
     await session_cache.set_decrypted(message.from_user.id, tokens)
-    
+
     await state.clear()
-    
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="Открыть InSync",
             web_app=WebAppInfo(url=settings.webapp_url),
         )]
     ])
-    
+
     await msg.edit_text(
-        f"✔️ Авторизация успешна!\n\nС возвращением, {result.get('full_name') or message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
+        f"✔️ Авторизация успешна!\n\nС возвращением, {message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
         reply_markup=kb
     )
 
@@ -200,23 +199,22 @@ async def process_2fa(message: types.Message, state: FSMContext):
         display_name=message.from_user.username or message.from_user.first_name,
         mirea_login=data.get("login"),
         group_name=result.get("group_name"),
-        full_name=result.get("full_name"),
         username=message.from_user.username,
     )
     await update_session(message.from_user.id, encrypted)
     await session_cache.set_decrypted(message.from_user.id, tokens)
-    
+
     await state.clear()
-    
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="Открыть InSync",
             web_app=WebAppInfo(url=settings.webapp_url),
         )]
     ])
-    
+
     await msg.edit_text(
-        f"✔️ Авторизация успешна!\n\nС возвращением, {result.get('full_name') or message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
+        f"✔️ Авторизация успешна!\n\nС возвращением, {message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
         reply_markup=kb
     )
 

@@ -37,7 +37,6 @@ async def init_db():
                 username TEXT,          -- Telegram @username (для добавления в друзья)
                 mirea_login TEXT,
                 group_name TEXT,        -- parsed on login
-                full_name TEXT,         -- parsed on login  
                 encrypted_session TEXT,
                 session_valid BOOLEAN DEFAULT 0,
                 session_updated_at INTEGER,
@@ -114,23 +113,21 @@ async def get_user(telegram_id: int) -> Optional[aiosqlite.Row]:
 async def upsert_user(
     telegram_id: int, 
     display_name: str, 
-    mirea_login: Optional[str] = None, 
-    group_name: Optional[str] = None, 
-    full_name: Optional[str] = None,
+    mirea_login: Optional[str] = None,
+    group_name: Optional[str] = None,
     username: Optional[str] = None
 ) -> None:
     """Создает нового пользователя или обновляет существующего."""
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO users (telegram_id, display_name, username, mirea_login, group_name, full_name)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (telegram_id, display_name, username, mirea_login, group_name)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(telegram_id) DO UPDATE SET
                 display_name = excluded.display_name,
                 username = coalesce(excluded.username, users.username),
                 mirea_login = coalesce(excluded.mirea_login, users.mirea_login),
-                group_name = coalesce(excluded.group_name, users.group_name),
-                full_name = coalesce(excluded.full_name, users.full_name)
-        """, (telegram_id, display_name, username, mirea_login, group_name, full_name))
+                group_name = coalesce(excluded.group_name, users.group_name)
+        """, (telegram_id, display_name, username, mirea_login, group_name))
         await db.commit()
 
 async def update_session(telegram_id: int, encrypted_session: str) -> None:

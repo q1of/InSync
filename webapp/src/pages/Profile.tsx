@@ -60,7 +60,7 @@ export function Profile({ onLogout }: Props) {
     }
   };
 
-  const name = session?.full_name || user?.first_name || 'Студент';
+  const name = user?.first_name || 'Студент';
   const valid = session?.valid;
   const nearest = days?.find((d) => d.count > 0);
 

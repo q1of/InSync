@@ -144,12 +144,12 @@ async def get_friends(user_id: int) -> list[dict]:
         async with get_db() as db:
             async with db.execute(
                 """
-                SELECT u.telegram_id, u.display_name, u.full_name, u.group_name,
+                SELECT u.telegram_id, u.display_name, u.group_name,
                        u.session_valid, f.marking_enabled
                 FROM friendships f
                 JOIN users u ON f.friend_id = u.telegram_id
                 WHERE f.user_id = ? AND f.status = 'accepted'
-                ORDER BY u.full_name, u.display_name
+                ORDER BY u.display_name
                 """,
                 (user_id,),
             ) as cursor:
@@ -158,7 +158,7 @@ async def get_friends(user_id: int) -> list[dict]:
             return [
                 {
                     "telegram_id": row["telegram_id"],
-                    "name": row["full_name"] or row["display_name"],
+                    "name": row["display_name"],
                     "group": row["group_name"],
                     "session_alive": bool(row["session_valid"]),
                     "marking_enabled": bool(row["marking_enabled"]),
@@ -176,7 +176,7 @@ async def get_pending_requests(user_id: int) -> list[dict]:
         async with get_db() as db:
             async with db.execute(
                 """
-                SELECT u.telegram_id, u.display_name, u.full_name, u.group_name, f.created_at
+                SELECT u.telegram_id, u.display_name, u.group_name, f.created_at
                 FROM friendships f
                 JOIN users u ON f.user_id = u.telegram_id
                 WHERE f.friend_id = ? AND f.status = 'pending'
@@ -189,7 +189,7 @@ async def get_pending_requests(user_id: int) -> list[dict]:
             return [
                 {
                     "telegram_id": row["telegram_id"],
-                    "name": row["full_name"] or row["display_name"],
+                    "name": row["display_name"],
                     "group": row["group_name"],
                     "created_at": row["created_at"],
                 }

@@ -350,7 +350,7 @@ _GROUP_RE = re.compile(r"\b[А-ЯЁ]{4}-\d{2}-\d{2}\b")
 
 
 async def get_me(session_cookies: dict) -> dict:
-    """Профиль + проверка сессии. Возвращает valid / cookies / full_name / group_name.
+    """Профиль + проверка сессии. Возвращает valid / cookies / group_name.
 
     При протухшей `.AspNetCore.Cookies` пробует обновить её по KEYCLOAK_IDENTITY.
     """
@@ -371,15 +371,15 @@ async def get_me(session_cookies: dict) -> dict:
         raw, err, cookies_out = await _attempt(fresh)
 
     if raw is None or b"api/auth/login" in (raw or b""):
-        return {"valid": False, "cookies": session_cookies, "full_name": None,
+        return {"valid": False, "cookies": session_cookies,
                 "group_name": None, "error": err or "Сессия истекла"}
 
     strings = _all_strings(raw)
-    # ФИО из профиля МИРЭА не извлекаем (ненадёжно) — в UI показываем имя Telegram.
+    # ФИО не извлекаем — в UI показываем имя Telegram. Из профиля берём только группу.
     group = next((m.group(0) for s in strings for m in [_GROUP_RE.search(s)] if m), None)
     merged = dict(session_cookies); merged.update(cookies_out)
     merged["__token_refreshed_at"] = str(int(time.time()))
-    return {"valid": True, "cookies": merged, "full_name": None, "group_name": group}
+    return {"valid": True, "cookies": merged, "group_name": group}
 
 
 # ------- Расписание -------
