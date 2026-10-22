@@ -324,9 +324,8 @@ export function Scanner({ active }: Props) {
               /* Hero — приглашение открыть камеру */
               <div style={{ padding: '26px 22px 26px' }}>
                 <div style={{ display: 'grid', placeItems: 'center' }}>
-                  <div class="hero-tile" style={{ width: 112, height: 112, borderRadius: 30 }}>
-                    <IconScan size={52} stroke={1.7} />
-                    <div class="hero-scan" />
+                  <div class="hero-tile" style={{ width: 88, height: 88, borderRadius: 24, animation: 'none' }}>
+                    <IconScan size={42} stroke={1.7} />
                   </div>
                 </div>
                 <h2 style={{ fontSize: 24, textAlign: 'center', marginTop: 22 }}>Лови момент. И&nbsp;QR.</h2>
