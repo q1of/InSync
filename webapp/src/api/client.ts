@@ -76,6 +76,13 @@ export interface Lesson {
 export const getScheduleApi = (days = 7) =>
   api<{ lessons: Lesson[] }>('GET', `/auth/schedule?days=${days}`);
 
+// Отключение отметки на конкретных парах (по start_epoch занятия)
+export const getOptoutsApi = () =>
+  api<{ start_epochs: number[] }>('GET', '/optouts');
+
+export const setOptoutApi = (body: { start_epoch: number; end_epoch: number | null; lesson_name: string; enabled: boolean }) =>
+  api<{ success: boolean }>('POST', '/optouts', body);
+
 export const logoutApi = () =>
   api('POST', '/auth/logout');
 
@@ -86,6 +93,7 @@ export interface MarkResult {
   success: boolean;
   error: string | null;
   retriable: boolean;
+  opted_out: boolean;   // сам отключил отметку на этой паре — не ошибка
 }
 export interface MarkResponse { results: MarkResult[]; total: number; successful: number; }
 

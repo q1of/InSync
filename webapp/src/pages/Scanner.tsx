@@ -26,7 +26,7 @@ function qrToken(text: string): string | null {
   return u ? u[0].toLowerCase() : null;
 }
 
-type Status = 'pending' | 'marking' | 'done' | 'failed';
+type Status = 'pending' | 'marking' | 'done' | 'failed' | 'skipped';
 interface Target { id: number; name: string; is_self: boolean; status: Status; error?: string | null; attempts: number; }
 type SessionState = 'idle' | 'active' | 'done';
 
@@ -88,6 +88,8 @@ export function Scanner({ active }: Props) {
           if (!ids.includes(t.id)) return t;
           const r = byId.get(t.id);
           if (r?.success) return { ...t, status: 'done', error: null };
+          // Сам отключил отметку на этой паре — не отмечаем, не повторяем.
+          if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           // Временная причина (сеть, «пара не началась») — повторяем без лимита.
           if (r?.retriable) return { ...t, status: 'pending', error: r.error };
           // Мёртвая/неизвестная причина (нет ответа или «нужно перезайти»):
@@ -189,7 +191,8 @@ export function Scanner({ active }: Props) {
     if (session !== 'active' || !targets.length) return;
     const openLeft = targets.some((t) => t.status === 'pending' || t.status === 'marking');
     if (!openLeft) {
-      const allOk = targets.every((t) => t.status === 'done');
+      // «skipped» (сам отключил пару) — не ошибка: успех, если нет реальных провалов.
+      const allOk = targets.every((t) => t.status === 'done' || t.status === 'skipped');
       hapticRef.current?.notificationOccurred?.(allOk ? 'success' : 'error');
       sessionRef.current = 'done';
       setSession('done');
@@ -304,6 +307,7 @@ function subtitle(t: Target): string {
     case 'marking': return 'отмечаем…';
     case 'pending': return 'ждём следующий QR…';
     case 'failed': return t.error || 'не удалось';
+    case 'skipped': return 'не отмечается на этой паре';
   }
 }
 
@@ -314,6 +318,10 @@ function StatusBadge({ status }: { status: Status }) {
   }
   if (status === 'failed') {
     return <div style={{ ...box, background: 'var(--miss-dim)', color: 'var(--miss)' }}><IconX size={16} stroke={2.6} /></div>;
+  }
+  if (status === 'skipped') {
+    // сам отключил пару — нейтральный «минус», не провал
+    return <div style={{ ...box, background: 'var(--bg-2)', color: 'var(--ink-faint)' }}><span style={{ width: 12, height: 2.6, borderRadius: 2, background: 'currentColor' }} /></div>;
   }
   if (status === 'marking') {
     return (

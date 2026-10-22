@@ -98,6 +98,8 @@ class AttendanceResult(BaseModel):
     error: Optional[str] = None
     # Есть ли смысл повторить на следующем QR (временный сбой), или нет (нужен перезаход)
     retriable: bool = False
+    # Пользователь сам отключил отметку на этой паре — не отмечаем, не ошибка
+    opted_out: bool = False
 
 class AttendanceResponse(BaseModel):
     results: List[AttendanceResult]
@@ -122,6 +124,12 @@ class AttendanceResponse(BaseModel):
             ]
         }
     }
+
+class OptoutRequest(BaseModel):
+    start_epoch: int                     # начало пары — идентификатор занятия
+    end_epoch: Optional[int] = None      # конец пары (окно «идёт сейчас»)
+    lesson_name: Optional[str] = None
+    enabled: bool = True                 # True — отключить отметку, False — вернуть
 
 class SessionStatus(BaseModel):
     logged_in: bool = False          # есть сохранённая сессия Пульса

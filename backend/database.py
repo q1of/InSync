@@ -70,6 +70,17 @@ async def init_db():
             );
         """)
         
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS lesson_optout(
+                telegram_id INTEGER NOT NULL REFERENCES users(telegram_id),
+                start_epoch INTEGER NOT NULL,   -- начало пары = идентификатор занятия
+                end_epoch INTEGER,              -- конец пары (окно «сейчас идёт»)
+                lesson_name TEXT,
+                created_at INTEGER DEFAULT (unixepoch()),
+                PRIMARY KEY (telegram_id, start_epoch)
+            );
+        """)
+
         # Миграция старых БД: добавить marking_enabled, если его нет
         async with db.execute("PRAGMA table_info(friendships)") as cur:
             cols = [r["name"] for r in await cur.fetchall()]
@@ -90,6 +101,7 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id, status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id, status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_initiator ON attendance_log(initiator, scan_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_optout_user ON lesson_optout(telegram_id, start_epoch)")
 
         await db.commit()
 
@@ -144,6 +156,60 @@ async def clear_session(telegram_id: int) -> None:
             WHERE telegram_id = ?
         """, (telegram_id,))
         await db.commit()
+
+LESSON_DEFAULT_LEN = 5400   # ~1.5ч — если Пульс не прислал конец пары
+
+
+async def get_optouts(telegram_id: int) -> List[int]:
+    """start_epoch всех пар, на которых пользователь отключил отметку."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT start_epoch FROM lesson_optout WHERE telegram_id = ?", (telegram_id,)
+        ) as cur:
+            return [r["start_epoch"] for r in await cur.fetchall()]
+
+
+async def set_optout(
+    telegram_id: int, start_epoch: int, end_epoch: Optional[int],
+    lesson_name: Optional[str], enabled: bool,
+) -> None:
+    """Включает/снимает отключение отметки на конкретном занятии."""
+    if not end_epoch or end_epoch <= start_epoch:
+        end_epoch = start_epoch + LESSON_DEFAULT_LEN
+    async with get_db() as db:
+        if enabled:
+            await db.execute(
+                """INSERT INTO lesson_optout (telegram_id, start_epoch, end_epoch, lesson_name)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(telegram_id, start_epoch) DO UPDATE SET
+                       end_epoch = excluded.end_epoch, lesson_name = excluded.lesson_name""",
+                (telegram_id, start_epoch, end_epoch, lesson_name),
+            )
+        else:
+            await db.execute(
+                "DELETE FROM lesson_optout WHERE telegram_id = ? AND start_epoch = ?",
+                (telegram_id, start_epoch),
+            )
+        await db.commit()
+
+
+async def opted_out_now(telegram_ids: List[int], now: int, grace: int = 1800) -> dict:
+    """Для каждого id: название отключённой пары, если она идёт прямо сейчас (±grace).
+
+    Окно пары сохраняется при отключении, поэтому расписание на скане дёргать не нужно.
+    """
+    if not telegram_ids:
+        return {}
+    ph = ",".join("?" * len(telegram_ids))
+    async with get_db() as db:
+        async with db.execute(
+            f"""SELECT telegram_id, lesson_name FROM lesson_optout
+                WHERE telegram_id IN ({ph})
+                  AND start_epoch - ? <= ? AND end_epoch + ? >= ?""",
+            (*telegram_ids, grace, now, grace, now),
+        ) as cur:
+            return {r["telegram_id"]: (r["lesson_name"] or "эту пару") for r in await cur.fetchall()}
+
 
 async def get_friends_sessions(telegram_id: int) -> List[aiosqlite.Row]:
     """Возвращает зашифрованные сессии всех принятых друзей с валидными сессиями."""

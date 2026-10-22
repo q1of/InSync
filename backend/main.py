@@ -19,6 +19,7 @@ from backend.services.session_cache import session_cache
 from backend.routes.auth import router as auth_router
 from backend.routes.friends import router as friends_router
 from backend.routes.attendance import router as attendance_router
+from backend.routes.optout import router as optout_router
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +328,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(friends_router)
 app.include_router(attendance_router)
+app.include_router(optout_router)
 
 
 @app.get("/api/health")

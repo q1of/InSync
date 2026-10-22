@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.models import (
@@ -6,7 +8,7 @@ from backend.models import (
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
-from backend.database import get_db
+from backend.database import get_db, opted_out_now
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -67,13 +69,25 @@ async def mark_attendance(
     if not sessions:
         raise HTTPException(status_code=400, detail="Нет активных сессий для отметки")
 
-    # Параллельная отметка через asyncio.gather
-    raw_results = await mark_attendance_parallel(request.qr_data, sessions)
+    # Кто сам отключил отметку на идущей сейчас паре — того не трогаем (ни друга, ни себя).
+    now = int(time.time())
+    opted = await opted_out_now([s[0] for s in sessions], now)
+
+    to_mark = [s for s in sessions if s[0] not in opted]
+    raw_results = await mark_attendance_parallel(request.qr_data, to_mark) if to_mark else []
+    for tid, name, _ in sessions:
+        if tid in opted:
+            raw_results.append({
+                "telegram_id": tid, "user_name": name, "success": False,
+                "error": f"Отключил отметку на этой паре ({opted[tid]})", "opted_out": True,
+            })
 
     # Логируем результаты. При scan_id — обновляем строку этой сессии (а не плодим
     # по записи на каждый токен), чтобы в истории была одна отметка с финальным статусом.
     async with get_db() as db:
         for r in raw_results:
+            if r.get("opted_out"):
+                continue  # сам отключил пару — это не попытка отметки, в историю не пишем
             if request.scan_id:
                 cur = await db.execute(
                     """UPDATE attendance_log
@@ -111,7 +125,8 @@ async def mark_attendance(
             telegram_id=r["telegram_id"],
             success=r["success"],
             error=r.get("error"),
-            retriable=_is_retriable(r["success"], r.get("error")),
+            opted_out=r.get("opted_out", False),
+            retriable=False if r.get("opted_out") else _is_retriable(r["success"], r.get("error")),
         )
         for r in raw_results
     ]

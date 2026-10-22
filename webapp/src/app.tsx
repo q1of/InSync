@@ -5,15 +5,15 @@ import { Scanner } from './pages/Scanner';
 import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { Friends } from './pages/Friends';
-import { History } from './pages/History';
-import { IconScan, IconUsers, IconHistory, IconUser } from './components/icons';
+import { Lessons } from './pages/Lessons';
+import { IconScan, IconUsers, IconCalendar, IconUser } from './components/icons';
 
-type Tab = 'scanner' | 'friends' | 'history' | 'profile';
+type Tab = 'scanner' | 'lessons' | 'friends' | 'profile';
 
 const TABS: { id: Tab; label: string; Icon: any }[] = [
   { id: 'scanner', label: 'Сканер', Icon: IconScan },
+  { id: 'lessons', label: 'Пары', Icon: IconCalendar },
   { id: 'friends', label: 'Друзья', Icon: IconUsers },
-  { id: 'history', label: 'История', Icon: IconHistory },
   { id: 'profile', label: 'Профиль', Icon: IconUser },
 ];
 
@@ -60,8 +60,8 @@ export function App() {
       </div>
       {tab !== 'scanner' && (
         <div key={tab} class="enter" style={{ flex: 1 }}>
+          {tab === 'lessons' && <Lessons />}
           {tab === 'friends' && <Friends onPendingChange={setPendingCount} />}
-          {tab === 'history' && <History />}
           {tab === 'profile' && <Profile onLogout={() => { setHasSession(false); setTab('scanner'); }} />}
         </div>
       )}

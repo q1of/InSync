@@ -2,7 +2,8 @@ import { useState, useEffect } from 'preact/hooks';
 import { getHistoryApi, Scan } from '../api/client';
 import { IconHistory, IconCheck, IconX } from '../components/icons';
 
-export function History() {
+// Список истории без собственной обёртки/заголовка — встраивается во вкладку «Пары».
+export function HistoryList() {
   const [scans, setScans] = useState<Scan[] | null>(null);
 
   useEffect(() => { getHistoryApi().then((r) => setScans(r.scans)).catch(() => setScans([])); }, []);
@@ -15,9 +16,7 @@ export function History() {
   }, {} as Record<string, Scan[]>);
 
   return (
-    <div class="screen screen-pad-top">
-      <h1 style={{ fontSize: 26, marginBottom: 18 }}>История</h1>
-
+    <>
       {scans == null ? (
         <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>
       ) : scans.length === 0 ? (
@@ -38,7 +37,7 @@ export function History() {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
