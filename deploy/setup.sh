@@ -68,10 +68,14 @@ rm -rf /var/www/insync && mkdir -p /var/www/insync && cp -r webapp/dist/* /var/w
 say "Caddy: статика + /api -> backend + HTTPS на ${DOMAIN}"
 cat >/etc/caddy/Caddyfile <<EOF
 ${DOMAIN} {
-    reverse_proxy /api/* 127.0.0.1:8000
-    root * /var/www/insync
-    try_files {path} /index.html
-    file_server
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+    handle {
+        root * /var/www/insync
+        try_files {path} /index.html
+        file_server
+    }
 }
 EOF
 systemctl restart caddy
