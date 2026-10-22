@@ -154,20 +154,17 @@ export function Scanner({ active }: Props) {
       try {
         const { Html5Qrcode } = await import('html5-qrcode');
         if (cancelled) return;
-        const scanner = new Html5Qrcode('qr-reader', {
-          verbose: false,
-          // нативный BarcodeDetector (железное декодирование) — читает QR в разы быстрее
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        } as any);
+        const scanner = new Html5Qrcode('qr-reader', { verbose: false } as any);
         scannerRef.current = scanner;
-        await scanner.start(
-          // чёткое видео — лучше и быстрее читается QR
-          { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } as any,
-          { fps: 25, aspectRatio: 1, disableFlip: true },   // без qrbox — рамку рисуем свою
-          handleDecode,
-          () => {},
-        );
-        // Если камера поддерживает оптический зум — включаем ползунок
+        const cfg = { fps: 15, aspectRatio: 1 };   // без qrbox — рамку рисуем свою
+        // Простые constraints — так getUserMedia надёжно запрашивает камеру в вебвью.
+        // Задняя камера, при неудаче — любая доступная.
+        try {
+          await scanner.start({ facingMode: 'environment' }, cfg, handleDecode, () => {});
+        } catch {
+          await scanner.start({ facingMode: 'user' }, cfg, handleDecode, () => {});
+        }
+        // Оптический зум, если камера его умеет
         try {
           const caps: any = (scanner as any).getRunningTrackCapabilities?.();
           if (caps?.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > (caps.zoom.min ?? 1)) {
@@ -176,6 +173,7 @@ export function Scanner({ active }: Props) {
         } catch {}
       } catch (e) {
         console.error(e);
+        setHint('Нет доступа к камере. Разреши камеру для Telegram в настройках телефона и переоткрой приложение.');
       }
     })();
     return () => {
