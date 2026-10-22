@@ -267,20 +267,10 @@ export function Scanner({ active }: Props) {
     <div class="screen screen-pad-top">
       {/* Hero — «на месте одним касанием» */}
       <div class="panel enter" style={{ padding: 26, overflow: 'hidden' }}>
-        <div class="hero-stage">
-          <svg class="hero-orbit a" viewBox="0 0 250 150">
-            <ellipse class="ring" cx="125" cy="75" rx="112" ry="40" transform="rotate(-22 125 75)" />
-            <circle class="bead" cx="237" cy="75" r="3" transform="rotate(-22 125 75)" />
-          </svg>
-          <svg class="hero-orbit b" viewBox="0 0 250 150">
-            <ellipse class="ring" cx="125" cy="75" rx="112" ry="40" transform="rotate(24 125 75)" />
-            <circle class="bead" cx="13" cy="75" r="2.5" transform="rotate(24 125 75)" />
-          </svg>
-          <div class="hero-glow" />
-          <div class="hero-tile">
-            <svg class="logo-mark" viewBox="0 0 100 100">
-              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
-              <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
+        <div class="hero-stage" style={{ height: 118 }}>
+          <div class="hero-tile" style={{ width: 74, height: 74, borderRadius: 21, animation: 'none' }}>
+            <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 40, height: 40 }}>
+              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" style={{ opacity: 1 }} />
             </svg>
           </div>
         </div>
