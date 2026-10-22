@@ -433,10 +433,19 @@ def _parse_timestamp(data: bytes) -> float | None:
     return None
 
 
+# Оставляем только буквы, пробел и дефис — убираем случайные служебные байты
+# протобуфа, которые иногда прилипают к частям ФИО (напр. «▮Борисовна»).
+_NAME_CLEAN_RE = re.compile(r"[^A-Za-zА-Яа-яЁё \-]")
+
+
+def _clean_name(s: str) -> str:
+    return _NAME_CLEAN_RE.sub("", s or "").strip()
+
+
 def _parse_teacher(data: bytes) -> str:
-    first = _string_field(data, 2) or ""
-    last = _string_field(data, 3) or ""
-    patr = _string_field(data, 4) or ""
+    first = _clean_name(_string_field(data, 2) or "")
+    last = _clean_name(_string_field(data, 3) or "")
+    patr = _clean_name(_string_field(data, 4) or "")
     return " ".join(p for p in (last, first, patr) if p)
 
 

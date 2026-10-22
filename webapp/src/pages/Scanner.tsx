@@ -68,11 +68,14 @@ export function Scanner({ active }: Props) {
   useEffect(() => { targetsRef.current = targets; }, [targets]);
   useEffect(() => { hapticRef.current = haptic; }, [haptic]);
 
+  // Обновляем список друзей при каждом входе на вкладку «Сканер» — чтобы
+  // только что добавленный/включённый друг сразу попадал в отметку.
   useEffect(() => {
+    if (!active) return;
     getFriendsApi()
       .then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled)))
-      .catch(() => setEnabledFriends([]));
-  }, []);
+      .catch(() => {});
+  }, [active]);
 
   const buildTargets = (): Target[] => {
     const self: Target = { id: user?.id ?? 0, name: user?.first_name || 'Ты', is_self: true, status: 'pending', attempts: 0 };
@@ -209,6 +212,8 @@ export function Scanner({ active }: Props) {
   const openScan = () => {
     hapticRef.current?.impactOccurred?.('light');
     prewarmApi().catch(() => {});
+    // свежий список друзей на момент открытия (вдруг добавили прямо сейчас)
+    getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
     getScheduleApi(1).then((r) => {
       const now = Date.now() / 1000;
       const l = r.lessons.find((x) => (x.start_epoch || 0) - 900 <= now && now <= (x.end_epoch || (x.start_epoch || 0) + 5400));
