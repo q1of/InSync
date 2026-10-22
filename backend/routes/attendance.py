@@ -10,6 +10,7 @@ from backend.models import (
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
+from backend.services.mirea_client import warm_connection
 from backend.database import get_db, opted_out_now
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,8 @@ async def prewarm(user: TelegramUser = Depends(get_current_user)):
     """Прогрев перед сканом: расшифровать и закешировать сессии (свою + друзей),
     чтобы ПЕРВАЯ отметка не платила за расшифровку. Фронт зовёт при открытии сканера."""
     sessions = await session_cache.get_all_sessions_for_mark(user.telegram_id)
+    # Прогрев TLS-соединения к Пульсу в фоне — чтобы первый self-approve был мгновенным.
+    asyncio.create_task(warm_connection())
     return {"ready": len(sessions)}
 
 

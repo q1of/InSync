@@ -162,7 +162,7 @@ function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
                   </div>
                 </div>
                 {markable
-                  ? <OptoutChip on={isOff} onClick={() => onToggleOptout(l)} />
+                  ? <OptoutToggle on={isOff} onClick={() => onToggleOptout(l)} />
                   : <span class="faint" style={{ alignSelf: 'center', flex: 'none', fontSize: 11, textAlign: 'right', lineHeight: 1.3, maxWidth: 74 }}>отмечает преподаватель</span>}
               </div>
             );
@@ -208,17 +208,15 @@ function TypeTag({ type }: { type?: string }) {
   );
 }
 
-// Неброский чип вместо тумблера: по умолчанию почти незаметен, становится
-// виден, только когда пара отключена.
-function OptoutChip({ on, onClick }: { on: boolean; onClick: () => void }) {
+// Маленький тумблер с подписью «не отмечать» — чтобы было ясно: он не про отметку,
+// а про то, чтобы НЕ отмечаться на этой паре. Неброский, не отвлекает от расписания.
+function OptoutToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} title="Не отмечаться на этой паре"
-      style={{ alignSelf: 'center', flex: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 600,
-        padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
-        border: '1px solid ' + (on ? 'var(--warn)' : 'var(--hairline)'),
-        background: 'transparent', color: on ? 'var(--warn)' : 'var(--ink-faint)',
-        opacity: on ? 1 : 0.55 }}>
-      {on ? 'не отмечаюсь' : 'отмечаюсь'}
-    </button>
+    <div onClick={onClick} title="Не отмечаться на этой паре"
+      style={{ alignSelf: 'center', flex: 'none', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+      <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+        color: on ? 'var(--warn)' : 'var(--ink-faint)' }}>не&nbsp;отмечать</span>
+      <div class="toggle" data-on={on} style={{ transform: 'scale(0.62)', transformOrigin: 'right center' }} />
+    </div>
   );
 }

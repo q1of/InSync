@@ -253,6 +253,20 @@ def _get_transport() -> httpx.AsyncHTTPTransport:
     return _pulse_transport
 
 
+async def warm_connection() -> None:
+    """Прогреть TLS/TCP-соединение к Пульсу (в общий пул) ДО скана, чтобы первая
+    отметка не платила за рукопожатие (~0.1–0.3с). Результат не важен, ошибки глушим.
+    Клиент НЕ закрываем — иначе порвём общий пул (close у PulseClient тоже no-op)."""
+    try:
+        cli = httpx.AsyncClient(
+            transport=_get_transport(), follow_redirects=False,
+            timeout=httpx.Timeout(5.0, connect=5.0), headers={"User-Agent": UA},
+        )
+        await cli.get(f"{PULSE}/", headers={"Origin": PULSE, "Referer": f"{PULSE}/"})
+    except Exception:
+        pass
+
+
 class PulseClient:
     """gRPC-Web клиент поверх cookies сессии Пульса."""
 
