@@ -37,7 +37,6 @@ export function Scanner({ active }: Props) {
   const [camOpen, setCamOpen] = useState(false);         // десктоп: попап с нашей камерой
   const [camScanning, setCamScanning] = useState(false);
   const [camStarting, setCamStarting] = useState(false);
-  const [camDone, setCamDone] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
 
@@ -120,13 +119,10 @@ export function Scanner({ active }: Props) {
     doneRef.current = true;
     const allOk = targets.every((t) => t.status === 'done' || t.status === 'skipped');
     hapticRef.current?.notificationOccurred?.(allOk ? 'success' : 'error');
-    if (scanning) {   // мобайл: закрываем нативный сканер, показываем итог
-      try { (webApp as any)?.closeScanQrPopup?.(); } catch {}
-      setScanning(false);
-      setResultOpen(true);
-    } else {          // десктоп: оставляем попап, показываем «Сканировать снова»
-      setCamDone(true);
-    }
+    // Везде одинаково: закрываем сканер/камеру и показываем единый попап итога.
+    if (scanning) { try { (webApp as any)?.closeScanQrPopup?.(); } catch {} setScanning(false); }
+    if (camOpen) setCamOpen(false);
+    setResultOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, scanning, camOpen]);
 
@@ -202,7 +198,6 @@ export function Scanner({ active }: Props) {
     doneRef.current = false;
     targetsRef.current = list;
     setTargets(list);
-    setCamDone(false);
     return list;
   };
 
@@ -229,22 +224,30 @@ export function Scanner({ active }: Props) {
 
   const crew = enabledFriends.length;
   const crewLine = crew ? `С тобой — ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : 'Отметим только тебя';
-  const doneCount = targets.filter((t) => t.status === 'done').length;
+  const marked = targets.filter((t) => t.status === 'done');
 
-  const StatusList = () => (
-    <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {targets.map((t) => (
-        <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-          <StatusBadge status={t.status} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {t.is_self ? 'Ты' : t.name}
+  // Показываем только успешные отметки. Кого не отметили — уходит личным
+  // сообщением от бота, полные логи в приложении не нужны.
+  const ResultList = () => (
+    marked.length === 0 ? (
+      <div class="faint" style={{ fontSize: 13, textAlign: 'center', padding: '10px 0 2px' }}>
+        Пока никого не отметили — проверь сообщения от бота.
+      </div>
+    ) : (
+      <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {marked.map((t) => (
+          <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
+            <StatusBadge status="done" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {t.is_self ? 'Ты' : t.name}
+              </div>
+              <div class="faint" style={{ fontSize: 12.5 }}>отмечен</div>
             </div>
-            <div class="faint" style={{ fontSize: 12.5 }}>{subtitle(t)}</div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    )
   );
 
   return (
@@ -288,26 +291,33 @@ export function Scanner({ active }: Props) {
         <span class="faint" style={{ fontSize: 12.5 }}>История отметок — во вкладке «Пары»</span>
       </div>
 
-      {/* Мобайл: попап итога после нативного скана */}
+      {/* Единый попап итога (телефон и ПК): показываем только успешные отметки */}
       {resultOpen && (
         <Popup title="Отметка на паре" onClose={() => setResultOpen(false)}>
-          <div class="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+          <div class="row" style={{ marginBottom: 12 }}>
             <span style={{ fontWeight: 700 }}>
-              <span class="display">{doneCount}</span><span class="faint"> / {targets.length}</span> отмечено
+              <span class="display">{marked.length}</span><span class="faint"> / {targets.length}</span> отмечено
             </span>
           </div>
-          <StatusList />
+          <ResultList />
           <button class="btn" style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={rescan}>
             <IconScan size={19} stroke={2.2} /> Сканировать снова
           </button>
         </Popup>
       )}
 
-      {/* Десктоп: попап с нашей камерой */}
+      {/* Десктоп: попап только с камерой (без статусов снизу) + уголки как в TG */}
       {camOpen && (
         <Popup title="Отметка на паре" onClose={closeCamera}>
           <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#000', border: '1px solid var(--hairline)' }}>
             <div id="qr-reader" style={{ width: '100%', height: '100%' }} />
+            {camScanning && (
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', zIndex: 2 }}>
+                <div style={{ position: 'relative', width: '64%', aspectRatio: '1 / 1', maxWidth: 240 }}>
+                  <span class="scan-corner tl" /><span class="scan-corner tr" /><span class="scan-corner bl" /><span class="scan-corner br" />
+                </div>
+              </div>
+            )}
             {camStarting && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4 }}><div class="spinner" /></div>}
             {!camStarting && !camScanning && (
               <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
@@ -325,21 +335,6 @@ export function Scanner({ active }: Props) {
               </div>
             )}
           </div>
-
-          <div class="row" style={{ justifyContent: 'space-between', marginTop: 14, marginBottom: 10 }}>
-            <span style={{ fontWeight: 700 }}>
-              <span class="display">{doneCount}</span><span class="faint"> / {targets.length}</span> отмечено
-            </span>
-            {camDone
-              ? <span class="pill"><span class="dot dot-off" /> завершено</span>
-              : <span class="pill"><span class="dot dot-live" /> наведи на QR</span>}
-          </div>
-          <StatusList />
-          {camDone && (
-            <button class="btn" style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={rescan}>
-              <IconScan size={19} stroke={2.2} /> Сканировать снова
-            </button>
-          )}
         </Popup>
       )}
     </div>
@@ -363,16 +358,6 @@ function Popup({ title, onClose, children }: { title: string; onClose: () => voi
       </div>
     </div>
   );
-}
-
-function subtitle(t: Target): string {
-  switch (t.status) {
-    case 'done': return 'отмечен';
-    case 'marking': return 'отмечаем…';
-    case 'pending': return 'ждём QR…';
-    case 'failed': return t.error || 'не удалось';
-    case 'skipped': return 'не отмечается на этой паре';
-  }
 }
 
 function StatusBadge({ status }: { status: Status }) {

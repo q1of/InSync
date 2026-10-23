@@ -393,6 +393,13 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 .hero-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   border-radius: 50%; border: 1px solid var(--hairline-2); pointer-events: none; }
 
+/* рамка-уголки для камеры на ПК — как в нативном сканере Telegram */
+.scan-corner { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.92); }
+.scan-corner.tl { top: 0; left: 0; border-right: none; border-bottom: none; border-top-left-radius: 11px; }
+.scan-corner.tr { top: 0; right: 0; border-left: none; border-bottom: none; border-top-right-radius: 11px; }
+.scan-corner.bl { bottom: 0; left: 0; border-right: none; border-top: none; border-bottom-left-radius: 11px; }
+.scan-corner.br { bottom: 0; right: 0; border-left: none; border-top: none; border-bottom-right-radius: 11px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }

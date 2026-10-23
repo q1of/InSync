@@ -43,6 +43,10 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
             elif r.get("opted_out"):
                 await bot.send_message(
                     tid, f"ℹ️ Вас не отметили {where} — вы отключили отметку на этой паре.")
+            elif not _is_retriable(False, r.get("error")):
+                # Мёртвая ошибка (сессия слетела) — лично сообщаем, что не вышло.
+                await bot.send_message(
+                    tid, f"⚠️ Не удалось отметить вас {where} — войдите заново в InSync (/start).")
         except Exception:
             pass
 
