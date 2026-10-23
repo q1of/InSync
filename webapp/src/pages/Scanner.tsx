@@ -252,9 +252,10 @@ export function Scanner({ active }: Props) {
       {/* Hero */}
       <div class="panel enter" style={{ padding: 26, overflow: 'hidden' }}>
         <div class="hero-stage" style={{ height: 118 }}>
-          <div class="hero-tile" style={{ width: 74, height: 74, borderRadius: 21, animation: 'none' }}>
+          <div class="hero-tile" style={{ width: 74, height: 74, borderRadius: 21 }}>
             <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 40, height: 40 }}>
-              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" style={{ opacity: 1 }} />
+              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
+              <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
             </svg>
           </div>
         </div>
