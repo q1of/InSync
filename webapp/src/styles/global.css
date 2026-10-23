@@ -382,10 +382,16 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 .logo-mark .logo-base { stroke: var(--ink); opacity: 0.26; }
 .logo-mark .logo-trace {
   stroke: var(--ink); stroke-dasharray: 26 100;
-  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
-  animation: logoTrace 2.6s linear infinite;
+  animation: logoTrace 2.6s linear infinite;   /* без drop-shadow — дешевле для слабых телефонов */
 }
 @keyframes logoTrace { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -126; } }
+
+/* GPU-слой для парящей плитки — меньше перерисовок */
+.hero-tile { will-change: transform; backface-visibility: hidden; }
+
+/* статичные декоративные кольца за знаком (без анимации — без затрат) */
+.hero-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  border-radius: 50%; border: 1px solid var(--hairline-2); pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }

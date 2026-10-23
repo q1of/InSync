@@ -250,32 +250,35 @@ export function Scanner({ active }: Props) {
   return (
     <div class="screen screen-pad-top">
       {/* Hero */}
-      <div class="panel enter" style={{ padding: 28, overflow: 'hidden', background: 'linear-gradient(180deg, #17171b, #0e0e11)' }}>
-        <div class="hero-stage" style={{ height: 122 }}>
+      <div class="panel enter" style={{ padding: 30, overflow: 'hidden', position: 'relative',
+        background: 'radial-gradient(120% 80% at 50% 0%, #1b1b21, #0d0d10 60%)' }}>
+        <div class="hero-stage" style={{ height: 150 }}>
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            width: 150, height: 150, borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(255,255,255,0.09), transparent 66%)' }} />
-          <div class="hero-tile" style={{ width: 74, height: 74, borderRadius: 21 }}>
-            <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 40, height: 40 }}>
+            width: 170, height: 170, borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(255,255,255,0.10), transparent 64%)' }} />
+          <div class="hero-ring" style={{ width: 148, height: 148, opacity: 0.35 }} />
+          <div class="hero-ring" style={{ width: 112, height: 112, opacity: 0.55 }} />
+          <div class="hero-tile" style={{ width: 78, height: 78, borderRadius: 22 }}>
+            <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 42, height: 42 }}>
               <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
               <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
             </svg>
           </div>
         </div>
 
-        <h1 style={{ fontSize: 33, lineHeight: 1.06, textAlign: 'center', marginTop: 8 }}>
+        <h1 style={{ fontSize: 35, lineHeight: 1.04, textAlign: 'center', marginTop: 10 }}>
           На&nbsp;месте<br /><span class="sig-text">одним касанием</span>
         </h1>
-        <p class="muted" style={{ textAlign: 'center', fontSize: 14.5, lineHeight: 1.5, maxWidth: 300, margin: '13px auto 0' }}>
-          Нажми и наведи камеру на QR-код пары. Остальное сделает InSync.
+        <p class="muted" style={{ textAlign: 'center', fontSize: 14.5, lineHeight: 1.5, maxWidth: 290, margin: '14px auto 0' }}>
+          Наведи камеру на QR-код пары — остальное сделает InSync.
         </p>
 
         <button class="btn" onClick={startScan}
-          style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          style={{ marginTop: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16 }}>
           <IconScan size={20} stroke={2.2} /> Сканировать QR
         </button>
 
-        <div class="row" style={{ justifyContent: 'center', gap: 7, marginTop: 16 }}>
+        <div class="row" style={{ justifyContent: 'center', gap: 7, marginTop: 15 }}>
           <IconUsers size={14} color="var(--ink-faint)" />
           <span class="faint" style={{ fontSize: 13 }}>{crewLine}</span>
         </div>

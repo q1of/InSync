@@ -58,7 +58,7 @@ export function Profile({ onLogout }: Props) {
   const valid = session?.valid;
 
   return (
-    <div class="screen screen-pad-top">
+    <div class="screen screen-pad-top" style={{ display: 'flex', flexDirection: 'column', minHeight: '82vh' }}>
       <div class="panel enter" style={{ padding: 20, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
         <div class="avatar" style={{ width: 60, height: 60, fontSize: 22, flex: 'none' }}>{initials(name)}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -101,7 +101,7 @@ export function Profile({ onLogout }: Props) {
         <IconLogout size={18} /> Выйти
       </button>
 
-      <div style={{ textAlign: 'center', marginTop: 18 }}>
+      <div style={{ textAlign: 'center', marginTop: 'auto', paddingTop: 20, paddingBottom: 4 }}>
         <button onClick={() => { haptic?.selectionChanged?.(); setPrivacy(true); }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)',
             fontSize: 12, textDecoration: 'underline', textUnderlineOffset: 3, padding: 6, fontFamily: 'inherit' }}>
