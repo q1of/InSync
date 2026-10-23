@@ -250,8 +250,11 @@ export function Scanner({ active }: Props) {
   return (
     <div class="screen screen-pad-top">
       {/* Hero */}
-      <div class="panel enter" style={{ padding: 26, overflow: 'hidden' }}>
-        <div class="hero-stage" style={{ height: 118 }}>
+      <div class="panel enter" style={{ padding: 28, overflow: 'hidden', background: 'linear-gradient(180deg, #17171b, #0e0e11)' }}>
+        <div class="hero-stage" style={{ height: 122 }}>
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            width: 150, height: 150, borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(255,255,255,0.09), transparent 66%)' }} />
           <div class="hero-tile" style={{ width: 74, height: 74, borderRadius: 21 }}>
             <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 40, height: 40 }}>
               <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />

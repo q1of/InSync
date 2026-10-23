@@ -59,16 +59,19 @@ export function Profile({ onLogout }: Props) {
 
   return (
     <div class="screen screen-pad-top">
-      <div class="panel enter" style={{ padding: 26, textAlign: 'center', marginBottom: 16 }}>
-        <div class="avatar" style={{ width: 84, height: 84, fontSize: 30, margin: '0 auto 16px' }}>{initials(name)}</div>
-        <h2 style={{ fontSize: 23 }}>{name}</h2>
-        {user?.username && <p class="faint" style={{ marginTop: 4, fontSize: 13 }}>@{user.username}</p>}
-        {session?.group_name && <p class="muted" style={{ marginTop: 6 }}>{session.group_name}</p>}
-        <div style={{ marginTop: 16 }}>
-          <span class="pill">
+      <div class="panel enter" style={{ padding: 20, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div class="avatar" style={{ width: 60, height: 60, fontSize: 22, flex: 'none' }}>{initials(name)}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ fontSize: 20, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</h2>
+          <div class="faint" style={{ fontSize: 13, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {[user?.username ? `@${user.username}` : null, session?.group_name].filter(Boolean).join('  ·  ') || 'Студент МИРЭА'}
+          </div>
+          <div class="row" style={{ gap: 7, marginTop: 9 }}>
             <span class={'dot ' + (valid ? 'dot-live' : 'dot-off')} />
-            {session == null ? 'Проверяем…' : valid ? 'Сессия активна' : 'Сессия истекла'}
-          </span>
+            <span class="faint" style={{ fontSize: 12.5 }}>
+              {session == null ? 'Проверяем…' : valid ? 'Сессия активна' : 'Сессия истекла'}
+            </span>
+          </div>
         </div>
       </div>
 
