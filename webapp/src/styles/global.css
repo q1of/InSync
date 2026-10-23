@@ -241,38 +241,8 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 /* ---------- сканер: статичная рамка захвата (без пульсации) ---------- */
 /* Прячем оверлей «Scanner paused» от html5-qrcode (div без класса с этим фоном) */
 #qr-reader div[style*="rgba(9, 9, 9, 0.46)"] { display: none !important; }
-/* Прячем собственную рамку-уголки html5-qrcode — рисуем только свою */
+/* Прячем собственную рамку-уголки html5-qrcode (ПК) — рисуем свою scan-corner */
 #qr-reader #qr-shaded-region { display: none !important; }
-
-/* Рамка из уголков. При распознавании QR «захватывает» код — стягивается к центру. */
-.lock-frame { position: absolute; inset: 0; transform-origin: center; }
-.lock-frame.lock { animation: lock-snap 0.45s cubic-bezier(0.3, 1.1, 0.3, 1); }
-.lock-frame.lock .corner { animation: lock-glow 0.45s ease; }
-/* «захват»: уголки резко сжимаются к QR, чуть перелетают и фиксируются */
-@keyframes lock-snap {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(0.72); }
-  70%  { transform: scale(1.04); }
-  100% { transform: scale(1); }
-}
-@keyframes lock-glow {
-  0%, 100% { border-color: rgba(255, 255, 255, 0.85); box-shadow: none; }
-  40%      { border-color: var(--live); box-shadow: 0 0 16px var(--live); }
-}
-.corner { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.85); }
-.corner.tl { top: 42px; left: 42px; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
-.corner.tr { top: 42px; right: 42px; border-left: none; border-bottom: none; border-top-right-radius: 10px; }
-.corner.bl { bottom: 42px; left: 42px; border-right: none; border-top: none; border-bottom-left-radius: 10px; }
-.corner.br { bottom: 42px; right: 42px; border-left: none; border-top: none; border-bottom-right-radius: 10px; }
-
-/* вспышка — только в момент распознавания (ответ на действие) */
-.lock-burst { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-.lock-burst span {
-  position: absolute; width: 22%; height: 22%; border-radius: 14px;
-  border: 2px solid #fff;
-  animation: burst 0.4s ease-out forwards;
-}
-@keyframes burst { 0% { width: 22%; height: 22%; opacity: 0.9; } 100% { width: 128%; height: 128%; opacity: 0; } }
 
 /* ---------- модалка результата ---------- */
 .sheet-backdrop {
@@ -344,21 +314,8 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 ::selection { background: rgba(170, 172, 182, 0.30); color: var(--ink); }
 ::-moz-selection { background: rgba(170, 172, 182, 0.30); color: var(--ink); }
 
-/* ---------- hero сканера (живая центральная «цель») ---------- */
+/* ---------- hero сканера ---------- */
 .hero-stage { position: relative; height: 196px; display: grid; place-items: center; }
-.hero-orbit {
-  position: absolute; width: 250px; height: 150px; color: var(--hairline-2);
-  transform-origin: center;
-}
-.hero-orbit.a { animation: spin 17s linear infinite; }
-.hero-orbit.b { animation: spin 24s linear infinite reverse; opacity: 0.8; }
-.hero-orbit .ring { fill: none; stroke: currentColor; stroke-width: 1; }
-.hero-orbit .bead { fill: var(--ink); }
-.hero-glow {
-  position: absolute; width: 150px; height: 150px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 62%);
-  animation: heroGlow 4.6s ease-in-out infinite;
-}
 .hero-tile {
   position: relative; width: 94px; height: 94px; border-radius: 26px;
   display: grid; place-items: center; overflow: hidden; color: var(--ink);
@@ -367,14 +324,7 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
   animation: heroFloat 5s ease-in-out infinite;
 }
-.hero-scan {
-  position: absolute; left: 0; right: 0; height: 40%; pointer-events: none;
-  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.18), transparent);
-  animation: heroScan 2.8s ease-in-out infinite;
-}
 @keyframes heroFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
-@keyframes heroGlow { 0%, 100% { opacity: 0.35; transform: scale(0.95); } 50% { opacity: 0.6; transform: scale(1.1); } }
-@keyframes heroScan { 0% { transform: translateY(-130%); } 50% { transform: translateY(230%); } 100% { transform: translateY(-130%); } }
 
 /* фирменный знак InSync: по базовому контуру бежит светящийся «сигнал» */
 .logo-mark { width: 58px; height: 58px; overflow: visible; }

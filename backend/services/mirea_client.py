@@ -334,9 +334,10 @@ class PulseClient:
             return (True, None) if self._bearer() else (False, "Сессия истекла. Войдите заново.")
         return False, "Не удалось получить сессию Пульса"
 
-    async def grpc(self, url: str, payload: bytes) -> tuple[bytes | None, str | None]:
+    async def grpc(self, url: str, payload: bytes, timeout: float | None = None) -> tuple[bytes | None, str | None]:
         try:
-            resp = await self.client.post(url, content=_grpc_frame(payload), headers=self._grpc_headers())
+            kw = {"timeout": timeout} if timeout is not None else {}
+            resp = await self.client.post(url, content=_grpc_frame(payload), headers=self._grpc_headers(), **kw)
         except httpx.TimeoutException:
             return None, "Сервер не отвечает"
         except httpx.HTTPError as e:
@@ -599,7 +600,8 @@ async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str |
         if not ok:
             return False, err or "Сессия истекла"
         payload = b"\x0a" + _varint(len(token.encode())) + token.encode()
-        raw, err = await cli.grpc(SELF_APPROVE_URL, payload)
+        # Жёсткий тайм-аут: один зависший друг не должен держать волну (QR живёт ~20с).
+        raw, err = await cli.grpc(SELF_APPROVE_URL, payload, timeout=9.0)
         if err:
             return False, err
         if raw == b"":

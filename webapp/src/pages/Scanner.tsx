@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi } from '../api/client';
+import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi, getSessionApi } from '../api/client';
 import type { Friend } from '../api/client';
 import { IconCheck, IconX, IconScan, IconUsers } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
@@ -54,9 +54,13 @@ export function Scanner({ active }: Props) {
   useEffect(() => { targetsRef.current = targets; }, [targets]);
   useEffect(() => { activeRef.current = active; }, [active]);
 
+  const [sessionBad, setSessionBad] = useState(false);
+
   useEffect(() => {
     if (!active) return;
     getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
+    // Проактивно проверяем свою сессию — чтобы перезайти ЗАРАНЕЕ, а не когда уже висит QR.
+    getSessionApi(true).then((s) => setSessionBad(!!s.logged_in && !s.valid)).catch(() => {});
   }, [active]);
 
   const nativeSupported = () => {
@@ -252,6 +256,16 @@ export function Scanner({ active }: Props) {
 
   return (
     <div class="screen screen-pad-top">
+      {sessionBad && (
+        <div class="panel" style={{ padding: '12px 14px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center',
+          background: 'var(--miss-dim)', border: '1px solid rgba(255,91,123,0.3)' }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <span style={{ fontSize: 13, lineHeight: 1.4 }}>
+            Сессия Пульса слетела — зайди заново (Профиль → Выйти), иначе отметка не сработает.
+          </span>
+        </div>
+      )}
+
       {/* Hero */}
       <div class="panel enter" style={{ padding: 30, overflow: 'hidden', position: 'relative',
         background: 'radial-gradient(120% 80% at 50% 0%, #1b1b21, #0d0d10 60%)' }}>

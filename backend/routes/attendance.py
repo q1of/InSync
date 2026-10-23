@@ -11,7 +11,7 @@ from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
 from backend.services.mirea_client import warm_connection
-from backend.database import get_db, opted_out_now, notif_enabled
+from backend.database import get_db, opted_out_now, notif_enabled, set_session_invalid
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -107,6 +107,17 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
                 await db.commit()
         except Exception as e:
             logger.error("attendance log failed: %s", e)
+
+    # «Мёртвая» ошибка (слёт сессии) — сразу помечаем сессию невалидной, чтобы на
+    # следующих сканах этого человека не дёргали впустую (и профиль покажет «войти заново»).
+    for r in raw_results:
+        if not r.get("success") and not r.get("opted_out") and not _is_retriable(False, r.get("error")):
+            try:
+                await set_session_invalid(r["telegram_id"])
+                await session_cache.invalidate(r["telegram_id"])
+            except Exception:
+                pass
+
     await _notify_marked_friends(user, raw_results, lesson_name)
 
 

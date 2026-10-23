@@ -24,6 +24,8 @@ export function Profile({ onLogout }: Props) {
   const [privacy, setPrivacy] = useState(false);
 
   useEffect(() => {
+    // SWR: сначала мгновенно из БД (без запроса к Пульсу), потом уточняем живость в фоне.
+    getSessionApi(false).then(setSession).catch(() => {});
     getSessionApi(true).then(setSession).catch(() => {});
     getNotifPrefsApi().then(setPrefs).catch(() => {});
   }, []);

@@ -15,6 +15,8 @@ async def get_db():
     conn.row_factory = aiosqlite.Row
     # Ждать до 5с на заблокированной БД вместо мгновенной ошибки "database is locked".
     await conn.execute("PRAGMA busy_timeout=5000")
+    # С WAL безопасно и заметно быстрее на записи (теряем максимум последний коммит при аварии).
+    await conn.execute("PRAGMA synchronous=NORMAL")
     try:
         yield conn
     finally:
@@ -30,6 +32,8 @@ async def init_db():
         os.makedirs(db_dir, exist_ok=True)
         
     async with get_db() as db:
+        # WAL: чтения не блокируются записями — меньше «database is locked» под нагрузкой.
+        await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users(
                 telegram_id INTEGER PRIMARY KEY,
@@ -247,6 +251,15 @@ async def set_notif_pref(telegram_id: int, key: str, enabled: bool) -> None:
 async def notif_enabled(telegram_id: int, key: str) -> bool:
     """True, если пользователь хочет получать уведомления этого типа."""
     return (await get_notif_prefs(telegram_id)).get(key, True)
+
+
+async def set_session_invalid(telegram_id: int) -> None:
+    """Помечает сессию как невалидную (не трогая сам токен) — чтобы друга больше
+    не дёргали на сканах, пока он не перезайдёт. Токен оставляем на случай, что
+    он восстановится по KEYCLOAK_IDENTITY при следующем явном входе."""
+    async with get_db() as db:
+        await db.execute("UPDATE users SET session_valid = 0 WHERE telegram_id = ?", (telegram_id,))
+        await db.commit()
 
 
 async def get_friends_sessions(telegram_id: int) -> List[aiosqlite.Row]:
