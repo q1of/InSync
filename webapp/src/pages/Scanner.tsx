@@ -220,6 +220,7 @@ export function Scanner({ active }: Props) {
       lessonRef.current = l?.name || null;
     }).catch(() => { lessonRef.current = null; });
     setScanOpen(true);
+    setCamOn(true);   // одна кнопка: сразу открываем камеру
   };
 
   const closeScan = () => {
@@ -358,7 +359,7 @@ export function Scanner({ active }: Props) {
                   )}
                   {!camStarting && !camScanning && (
                     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
-                      <button class="btn" onClick={onStartScan} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
+                      <button class="btn" onClick={() => startCamera()} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
                     </div>
                   )}
                   {camScanning && (
