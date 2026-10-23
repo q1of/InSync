@@ -224,7 +224,8 @@ export function Scanner({ active }: Props) {
     if (camOpen) { prepare(); } else { startScan(); }
   };
 
-  const closeCamera = () => { setCamOpen(false); doneRef.current = true; };
+  // На ПК: закрыли камеру — показываем попап итога (как на телефоне после скана).
+  const closeCamera = () => { doneRef.current = true; setCamOpen(false); setResultOpen(true); };
 
   const crew = enabledFriends.length;
   const crewLine = crew ? `С тобой — ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : 'Отметим только тебя';

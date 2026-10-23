@@ -60,7 +60,7 @@ export function Profile({ onLogout }: Props) {
   const valid = session?.valid;
 
   return (
-    <div class="screen screen-pad-top" style={{ display: 'flex', flexDirection: 'column', minHeight: '82vh' }}>
+    <div class="screen screen-pad-top" style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
       <div class="panel enter" style={{ padding: 20, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 16 }}>
         <div class="avatar" style={{ width: 60, height: 60, fontSize: 22, flex: 'none' }}>{initials(name)}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
