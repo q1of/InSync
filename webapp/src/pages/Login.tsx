@@ -114,7 +114,7 @@ export function Login({ onLoginSuccess }: Props) {
               <button class="btn" type="submit" disabled={loading || code.length < 4}>{loading ? 'Проверяем…' : 'Подтвердить'}</button>
             </form>
             <button class="btn btn-ghost" style={{ marginTop: 10 }} onClick={resend} disabled={resendIn > 0}>
-              {resendIn > 0 ? `Отправить ещё раз · ${resendIn}` : 'Код не пришёл? Отправить ещё раз'}
+              {resendIn > 0 ? `Отправить ещё раз · ${resendIn}` : 'Отправить ещё раз'}
             </button>
           </div>
         )}
