@@ -241,6 +241,8 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 /* ---------- сканер: статичная рамка захвата (без пульсации) ---------- */
 /* Прячем оверлей «Scanner paused» от html5-qrcode (div без класса с этим фоном) */
 #qr-reader div[style*="rgba(9, 9, 9, 0.46)"] { display: none !important; }
+/* Прячем собственную рамку-уголки html5-qrcode — рисуем только свою */
+#qr-reader #qr-shaded-region { display: none !important; }
 
 /* Рамка из уголков. При распознавании QR «захватывает» код — стягивается к центру. */
 .lock-frame { position: absolute; inset: 0; transform-origin: center; }

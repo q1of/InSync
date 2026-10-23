@@ -165,12 +165,9 @@ export function Scanner({ active }: Props) {
       let scanner = scannerRef.current;
       if (!scanner) { scanner = new Html5Qrcode('qr-reader', { verbose: false } as any); scannerRef.current = scanner; }
       const cfg = { fps: 15, aspectRatio: 1 };   // без qrbox — рамку рисуем свою
-      // Задняя камера, при неудаче — любая доступная.
-      try {
-        await scanner.start({ facingMode: 'environment' }, cfg, handleDecode, () => {});
-      } catch {
-        await scanner.start({ facingMode: 'user' }, cfg, handleDecode, () => {});
-      }
+      // Один запрос getUserMedia: ideal-environment не падает, если задней нет
+      // (берёт любую) — не дёргаем доступ дважды, меньше запросов разрешения.
+      await scanner.start({ facingMode: { ideal: 'environment' } } as any, cfg, handleDecode, () => {});
       setCamScanning(true);
       // Оптический зум, если камера его умеет
       try {
