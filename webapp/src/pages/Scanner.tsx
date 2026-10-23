@@ -185,21 +185,32 @@ export function Scanner({ active }: Props) {
     }
   };
 
-  const stopCamera = async () => {
-    setCamScanning(false); setZoomCaps(null);
-    const s = scannerRef.current;
-    if (s) { try { if (s.isScanning) await s.stop(); } catch {} }
+  // Пауза/возобновление — НЕ отпускаем камеру (поток остаётся), поэтому доступ
+  // запрашивается один раз за сессию (как у других сканеров), без повторных окон.
+  const pauseCamera = () => {
+    const s: any = scannerRef.current;
+    try { if (s?.getState?.() === 2) s.pause(true); } catch {}   // 2 = SCANNING
+  };
+  const resumeCamera = () => {
+    const s: any = scannerRef.current;
+    try { if (s?.getState?.() === 3) s.resume(); } catch {}      // 3 = PAUSED
   };
 
-  // Камера жива, только пока открыт попап сканирования и вкладка активна.
-  // Закрыли попап / ушли с вкладки — останавливаем (освобождаем камеру и чиним
-  // «чёрный кадр»); открыли снова и нажали «Открыть камеру» — поднимаем заново.
+  // Камеру запускаем ОДИН раз (getUserMedia при первом «Открыть камеру»).
   useEffect(() => {
-    if (camOn && scanOpen && active) startCamera(); else stopCamera();
+    if (camOn && !scannerRef.current) startCamera();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camOn, scanOpen, active]);
+  }, [camOn]);
 
-  // Полная остановка при размонтировании.
+  // Видно (попап открыт + вкладка активна) — сканируем; иначе ставим на паузу,
+  // но поток не отпускаем, чтобы не запрашивать доступ заново.
+  useEffect(() => {
+    if (!camOn || !scannerRef.current) return;
+    if (scanOpen && active) resumeCamera(); else pauseCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanOpen, active, camOn, camScanning]);
+
+  // Полная остановка (отпускаем камеру) только при размонтировании.
   useEffect(() => () => {
     const s = scannerRef.current;
     if (s) { try { if (s.isScanning) s.stop().catch(() => {}); } catch {} }
@@ -220,8 +231,9 @@ export function Scanner({ active }: Props) {
   };
 
   const closeScan = () => {
+    // Камеру не выключаем (остаётся на паузе) — иначе при след. открытии снова
+    // спросит доступ. Полностью отпускается при закрытии приложения.
     setScanOpen(false);
-    setCamOn(false);
     reset();
   };
 
@@ -307,10 +319,11 @@ export function Scanner({ active }: Props) {
         </div>
       </div>
 
-      {/* Попап отметки */}
-      {scanOpen && (
+      {/* Попап отметки. Держим смонтированным пока камера жива (camOn) — только
+          прячем, чтобы не отпускать поток камеры и не запрашивать доступ заново. */}
+      {(scanOpen || camOn) && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(5px)',
-          display: 'grid', placeItems: 'center', padding: 16 }}>
+          display: scanOpen ? 'grid' : 'none', placeItems: 'center', padding: 16 }}>
           <div class="panel enter" style={{ padding: 0, maxWidth: 440, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
             {/* Хедер */}
             <div class="row" style={{ justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid var(--hairline)' }}>
@@ -355,7 +368,7 @@ export function Scanner({ active }: Props) {
                   )}
                   {!camStarting && !camScanning && (
                     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', zIndex: 4, padding: 20 }}>
-                      <button class="btn" onClick={onStartScan} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
+                      <button class="btn" onClick={() => startCamera()} style={{ width: 'auto', padding: '13px 24px' }}>Перезапустить камеру</button>
                     </div>
                   )}
                   {camScanning && (
