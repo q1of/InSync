@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uvicorn
 
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import Callable, Dict, Any, Awaitable
 from fastapi import FastAPI
@@ -13,7 +14,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from backend.config import settings
-from backend.database import init_db, get_user, upsert_user, update_session
+from backend.database import (
+    init_db, get_user, upsert_user, update_session,
+    get_active_session_users, set_session_invalid, notif_enabled,
+)
 from backend.services import mirea_service
 from backend.services.session_cache import session_cache
 from backend.routes.auth import router as auth_router
@@ -271,6 +275,66 @@ def _acquire_bot_lock() -> bool:
     return True
 
 
+_MSK = timezone(timedelta(hours=3))
+
+
+async def _check_one_session(telegram_id: int, encrypted: str) -> None:
+    """Проверка одной сессии: валидную освежаем, мёртвую — гасим и шлём предупреждение."""
+    cookies = mirea_service.decrypt_session(encrypted)
+    if not cookies:
+        return
+    status = await mirea_service.check_session(cookies)
+    if status.get("valid"):
+        new = status.get("cookies")
+        if new and new != cookies:
+            await update_session(telegram_id, mirea_service.encrypt_session(new))
+            await session_cache.set_decrypted(telegram_id, new)
+        return
+    # Сессия слетела — гасим и предупреждаем ЗАРАНЕЕ, до пар.
+    await set_session_invalid(telegram_id)
+    await session_cache.invalidate(telegram_id)
+    if bot and await notif_enabled(telegram_id, "session"):
+        try:
+            await bot.send_message(
+                telegram_id,
+                "⚠️ Сессия Пульса МИРЭА истекла. Зайди заранее (/start), чтобы "
+                "отмечаться на парах без спешки.",
+            )
+        except Exception:
+            pass
+
+
+async def _check_all_sessions() -> None:
+    """Проверяет сессии всех пользователей (мягко, по 3 за раз)."""
+    users = await get_active_session_users()
+    logger.info("Утренняя проверка сессий: %d шт.", len(users))
+    sem = asyncio.Semaphore(3)
+
+    async def _run(row):
+        async with sem:
+            try:
+                await _check_one_session(row["telegram_id"], row["encrypted_session"])
+            except Exception as e:
+                logger.warning("session check failed for %s: %s", row["telegram_id"], e)
+            await asyncio.sleep(0.3)   # не долбим Пульс
+
+    await asyncio.gather(*[_run(r) for r in users])
+
+
+async def _session_watch_loop() -> None:
+    """Каждый день в 08:00 МСК проверяет сессии и предупреждает тех, у кого слетело."""
+    while True:
+        now = datetime.now(_MSK)
+        nxt = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        if nxt <= now:
+            nxt += timedelta(days=1)
+        await asyncio.sleep((nxt - now).total_seconds())
+        try:
+            await _check_all_sessions()
+        except Exception as e:
+            logger.error("session watch failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle: инициализация БД при старте."""
@@ -283,9 +347,11 @@ async def lifespan(app: FastAPI):
 
     # Запуск бота в фоне (polling) — только если мы единственный экземпляр
     bot_task = None
+    watch_task = None
     if bot:
         if _acquire_bot_lock():
             bot_task = asyncio.create_task(dp.start_polling(bot))
+            watch_task = asyncio.create_task(_session_watch_loop())
             logger.info("Telegram bot polling started")
         else:
             logger.warning(
@@ -299,6 +365,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if bot_task:
         bot_task.cancel()
+    if watch_task:
+        watch_task.cancel()
     if bot:
         await bot.session.close()
     if _bot_lock_handle:

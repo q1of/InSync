@@ -253,6 +253,16 @@ async def notif_enabled(telegram_id: int, key: str) -> bool:
     return (await get_notif_prefs(telegram_id)).get(key, True)
 
 
+async def get_active_session_users() -> List[aiosqlite.Row]:
+    """Пользователи, у кого сейчас считается живая сессия — для утренней проверки."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT telegram_id, encrypted_session FROM users "
+            "WHERE session_valid = 1 AND encrypted_session IS NOT NULL"
+        ) as cur:
+            return await cur.fetchall()
+
+
 async def set_session_invalid(telegram_id: int) -> None:
     """Помечает сессию как невалидную (не трогая сам токен) — чтобы друга больше
     не дёргали на сканах, пока он не перезайдёт. Токен оставляем на случай, что
