@@ -43,25 +43,31 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
             elif r.get("opted_out"):
                 await bot.send_message(
                     tid, f"ℹ️ Вас не отметили {where} — вы отключили отметку на этой паре.")
-            elif not _is_retriable(False, r.get("error")):
-                # Мёртвая ошибка (сессия слетела) — лично сообщаем, что не вышло.
+            elif _is_dead_session(r.get("error")):
+                # Именно слёт сессии — лично сообщаем, что нужно перезайти.
                 await bot.send_message(
                     tid, f"⚠️ Не удалось отметить вас {where} — войдите заново в InSync (/start).")
         except Exception:
             pass
 
 
+def _is_dead_session(error: str | None) -> bool:
+    """Ошибка именно про слёт сессии (нужен перезаход) — для DM и session_valid=0."""
+    low = (error or "").lower()
+    return any(x in low for x in ("сесси", "войд", "истек", "перезай"))
+
+
 def _is_retriable(success: bool, error: str | None) -> bool:
     """Стоит ли повторять на следующем QR.
 
     Нет смысла повторять «мёртвые» ошибки: протухшая сессия / нужен перезаход /
-    нераспознанный QR. Всё остальное (сеть, «пара ещё не началась», неизвестный
-    ответ) — временное, повторяем на следующем токене.
+    нераспознанный QR / «не подтвердил» (без явного approved — не успех). Всё
+    остальное (сеть, «пара ещё не началась») — временное, повторяем на след. токене.
     """
     if success:
         return False
     low = (error or "").lower()
-    if "сесси" in low or "распознать qr" in low or "войд" in low or "перезай" in low:
+    if any(x in low for x in ("сесси", "распознать qr", "войд", "перезай", "не подтвердил")):
         return False
     return True
 
@@ -108,10 +114,10 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
         except Exception as e:
             logger.error("attendance log failed: %s", e)
 
-    # «Мёртвая» ошибка (слёт сессии) — сразу помечаем сессию невалидной, чтобы на
-    # следующих сканах этого человека не дёргали впустую (и профиль покажет «войти заново»).
+    # Слёт сессии — сразу помечаем невалидной, чтобы на следующих сканах этого
+    # человека не дёргали впустую (и профиль покажет «войти заново»).
     for r in raw_results:
-        if not r.get("success") and not r.get("opted_out") and not _is_retriable(False, r.get("error")):
+        if not r.get("success") and not r.get("opted_out") and _is_dead_session(r.get("error")):
             try:
                 await set_session_invalid(r["telegram_id"])
                 await session_cache.invalidate(r["telegram_id"])

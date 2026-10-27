@@ -352,10 +352,18 @@ class PulseClient:
         if status and status != "0":
             return None, trailers.get("grpc-message") or f"gRPC ошибка {status}"
         if not msgs:
-            preview = (resp.content[:300] or b"").decode("utf-8", "ignore").lower()
-            if any(x in preview for x in ("<html", "login", "signin", "keycloak")):
+            preview = (resp.content[:600] or b"").decode("utf-8", "ignore")
+            low = preview.lower()
+            if any(x in low for x in ("<html", "<!doctype", "login", "signin", "keycloak", "авториз", "войти")):
                 return None, "Сессия МИРЭА истекла. Войдите заново."
-            return b"", None
+            # Настоящий gRPC-ответ всегда несёт grpc-status. Нет статуса и нет
+            # сообщения — это НЕ подтверждение (чаще всего слёт сессии/редирект),
+            # поэтому НЕ считаем успехом (иначе ложное «отмечен»).
+            if trailers.get("grpc-status") == "0":
+                return b"", None
+            logger.warning("gRPC без сообщений и без grpc-status=0: %s trailers=%s preview=%r",
+                           url.rsplit("/", 1)[-1], trailers, preview[:120])
+            return None, "Пульс не подтвердил отметку"
         return msgs[0], None
 
 
@@ -604,13 +612,14 @@ async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str |
         raw, err = await cli.grpc(SELF_APPROVE_URL, payload, timeout=9.0)
         if err:
             return False, err
-        if raw == b"":
-            return True, None  # пустой ok-ответ
         approved, reason = _parse_selfapprove(raw or b"")
         if approved is True:
             return True, None
         if approved is False:
             return False, reason or "Отметка пока недоступна"
-        return False, "Неизвестный ответ сервера"
+        # Пусто/непонятно: у настоящей отметки есть поле approved{lessonId}, поэтому
+        # без явного подтверждения успехом НЕ считаем (лучше повтор, чем ложное «отмечен»).
+        logger.warning("self_approve без подтверждения: raw=%s", (raw or b"").hex()[:96])
+        return False, "Пульс не подтвердил отметку — попробуйте ещё раз"
     finally:
         await cli.close()
