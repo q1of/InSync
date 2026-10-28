@@ -99,10 +99,11 @@ h1, h2, h3, .display {
 /* ---------- панель ---------- */
 .panel {
   position: relative;
-  background: var(--surface);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface) 70%);
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 28px -20px rgba(0, 0, 0, 0.9);
 }
 .panel::before {
   content: "";

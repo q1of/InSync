@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getHistoryApi, Scan } from '../api/client';
-import { IconHistory, IconCheck, IconX } from '../components/icons';
+import { IconHistory, IconCheck, IconX, IconCalendar } from '../components/icons';
 
 // Список истории без собственной обёртки/заголовка — встраивается во вкладку «Пары».
 export function HistoryList() {
@@ -46,29 +46,33 @@ function ScanCard({ scan }: { scan: Scan }) {
   const allOk = scan.successful === scan.total;
   const accent = allOk ? 'var(--live)' : scan.successful === 0 ? 'var(--miss)' : 'var(--warn)';
   return (
-    <div class="panel" style={{ padding: 16 }}>
-      <div class="row" style={{ justifyContent: 'space-between', marginBottom: 12, gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
+    <div class="panel" style={{ padding: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px' }}>
+        <div style={{ width: 40, height: 40, flex: 'none', borderRadius: 12, display: 'grid', placeItems: 'center',
+          background: 'var(--bg-2)', border: '1px solid var(--hairline)', color: 'var(--ink-dim)' }}>
+          <IconCalendar size={18} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {scan.lesson_name || 'Пара'}
           </div>
           <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>{time}</div>
         </div>
         <span class="pill" style={{ padding: '4px 11px', fontSize: 12.5, color: accent, flex: 'none' }}>
-          {scan.successful}/{scan.total} отмечено
+          {scan.successful}/{scan.total}
         </span>
       </div>
-      <div class="faint" style={{ fontSize: 12, marginBottom: 8 }}>Вы отметили</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div style={{ borderTop: '1px solid var(--hairline)', padding: '11px 15px 13px', display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {scan.targets.map((t, i) => (
-          <div key={i} class="row" style={{ gap: 10 }}>
-            <span style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', flex: 'none',
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 7px',
+            borderRadius: 999, fontSize: 13, fontWeight: t.is_self ? 600 : 500,
+            background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
+            <span style={{ width: 18, height: 18, borderRadius: '50%', display: 'grid', placeItems: 'center', flex: 'none',
               background: t.success ? 'var(--live-dim)' : 'var(--miss-dim)', color: t.success ? 'var(--live)' : 'var(--miss)' }}>
-              {t.success ? <IconCheck size={13} stroke={2.8} /> : <IconX size={13} stroke={2.8} />}
+              {t.success ? <IconCheck size={11} stroke={3} /> : <IconX size={11} stroke={3} />}
             </span>
-            <span style={{ fontSize: 14.5, fontWeight: t.is_self ? 600 : 400 }}>{t.name}</span>
-            {!t.success && t.error && <span class="faint" style={{ fontSize: 12.5, marginLeft: 'auto' }}>{t.error}</span>}
-          </div>
+            {t.name}
+          </span>
         ))}
       </div>
     </div>
