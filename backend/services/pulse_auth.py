@@ -159,6 +159,40 @@ def _otp_challenge(html: str, base_url: str) -> Challenge | None:
     )
 
 
+def _auto_submit_form(html: str, base_url: str):
+    """Форма-редирект SSO->Пульс (response_mode=form_post).
+
+    МИРЭА стали возвращать результат входа не 302-редиректом, а HTML со скрытой
+    формой (<form method=post action=pulse...> с code/state/id_token), которую
+    браузер сам сабмитит. httpx формы не сабмитит — делаем это руками.
+    Возвращает (action_url, {поля}) или None. Формы логина/кода сюда НЕ попадают.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    for f in soup.find_all("form"):
+        if (f.get("method") or "").lower() != "post":
+            continue
+        action = f.get("action")
+        if not action:
+            continue
+        data: dict = {}
+        names: set = set()
+        for i in f.find_all("input"):
+            name = i.get("name")
+            if not name:
+                continue
+            data[name] = i.get("value", "")
+            names.add(name.lower())
+        # это форма ввода логина/пароля/кода — не callback, пропускаем
+        if names & {"username", "password", "otp", "emailcode", "totp", "smscode"}:
+            continue
+        action_full = urljoin(base_url, action)
+        is_callback = (_host(action_full) == "pulse.mirea.ru"
+                       or bool(names & {"code", "state", "id_token", "session_state"}))
+        if is_callback and data:
+            return action_full, data
+    return None
+
+
 def code_hint(challenge: Challenge) -> str:
     if challenge.kind == "email_code":
         if challenge.masked_email:
@@ -180,7 +214,15 @@ def _all_cookies(client: httpx.AsyncClient) -> dict:
 
 
 def _has_auth_cookie(client: httpx.AsyncClient) -> bool:
-    return any(c.name in AUTH_COOKIES for c in client.cookies.jar)
+    for c in client.cookies.jar:
+        if c.name in AUTH_COOKIES:
+            return True
+        # запас: любая auth-подобная cookie именно от Пульса (если имя сменили)
+        dom = (getattr(c, "domain", "") or "").lower()
+        low = c.name.lower()
+        if "pulse.mirea.ru" in dom and (".aspnetcore" in low or "auth" in low or "pulse" in low):
+            return True
+    return False
 
 
 def _logged_in(client: httpx.AsyncClient, resp: httpx.Response) -> bool:
@@ -243,7 +285,7 @@ class PulseLogin:
         except Exception:
             pass
 
-    async def _analyze(self, resp: httpx.Response, step: str) -> LoginOutcome:
+    async def _analyze(self, resp: httpx.Response, step: str, depth: int = 0) -> LoginOutcome:
         _trace(resp, step)
         host = _host(resp.url)
 
@@ -259,6 +301,20 @@ class PulseLogin:
                                       "Попробуйте войти ещё раз; если повторяется — пришлите data/sso_trace_code.json")
 
         if host != "sso.mirea.ru":
+            # Промежуточная страница Пульса с авто-формой (цепочка form_post) — досабмитим.
+            form = _auto_submit_form(html, str(resp.url))
+            if form and depth < 4:
+                action, data = form
+                logger.info("Авто-форма на %s — досабмитим: %s", host, action)
+                try:
+                    resp2 = await self.client.post(
+                        action, data=data,
+                        headers={"Referer": str(resp.url),
+                                 "Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                except httpx.HTTPError as e:
+                    return LoginOutcome(error=f"МИРЭА не ответила при завершении входа ({type(e).__name__})")
+                return await self._analyze(resp2, step + "+form", depth + 1)
             logger.error("Неожиданная страница после '%s': %s (%s)", step, resp.url, resp.status_code)
             return LoginOutcome(error=f"МИРЭА вернула неожиданную страницу ({resp.status_code})")
 
@@ -282,6 +338,24 @@ class PulseLogin:
         if err:
             logger.warning("МИРЭА отклонила вход на шаге '%s': %s", step, err)
             return LoginOutcome(error=err)
+
+        # response_mode=form_post: SSO вернул авто-сабмит форму в Пульс — досабмитим
+        # её сами (иначе .AspNetCore.Cookies не появится и вход «не работает»).
+        form = _auto_submit_form(html, url_s)
+        if form and depth < 4:
+            action, data = form
+            logger.info("SSO отдал форму-редирект в Пульс (form_post) — досабмитим: %s (поля: %s)",
+                        action, ", ".join(data))
+            try:
+                resp2 = await self.client.post(
+                    action, data=data,
+                    headers={"Referer": url_s, "Origin": SSO,
+                             "Content-Type": "application/x-www-form-urlencoded"},
+                )
+            except httpx.HTTPError as e:
+                logger.error("Ошибка завершения входа (form_post): %s", e)
+                return LoginOutcome(error=f"МИРЭА не ответила при завершении входа ({type(e).__name__})")
+            return await self._analyze(resp2, step + "+form", depth + 1)
 
         page = _page_id(html)
         logger.error("Неизвестный шаг входа SSO pageId=%s (шаг %s). Дамп в %s", page, step, DEBUG_DIR)
