@@ -141,25 +141,26 @@ function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
       </button>
 
       {open && (
-        <div style={{ padding: '0 14px 8px' }}>
+        <div style={{ padding: '2px 10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {day.lessons.map((l) => {
             const markable = isMarkable(l.type);          // отмечаемся только на лекциях
             const isOff = markable && offSet.has(l.start_epoch || 0);
+            const meta1 = [l.room && `ауд. ${l.room}`, l.subgroup].filter(Boolean).join(' · ');
             return (
-              <div key={l.start_epoch} class="row" style={{ alignItems: 'center', gap: 10, padding: '9px 0',
-                borderTop: '1px solid var(--hairline)', opacity: isOff ? 0.5 : 1 }}>
-                <div style={{ width: 44, flex: 'none', textAlign: 'right' }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
-                  <div class="faint" style={{ fontSize: 11.5 }}>{fmtTime(l.end_epoch)}</div>
+              <div key={l.start_epoch} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px',
+                borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)', opacity: isOff ? 0.55 : 1 }}>
+                <div style={{ width: 48, flex: 'none', textAlign: 'center', borderRadius: 10, padding: '6px 0',
+                  background: 'var(--surface)', border: '1px solid var(--hairline)' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
+                  <div class="faint" style={{ fontSize: 10.5, marginTop: 1 }}>{fmtTime(l.end_epoch)}</div>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div class="row" style={{ gap: 6, alignItems: 'center' }}>
                     <TypeTag type={l.type} />
                     <span style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                   </div>
-                  <div class="faint" style={{ fontSize: 12, marginTop: 2, lineHeight: 1.35 }}>
-                    {[l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
-                  </div>
+                  {meta1 && <div class="faint" style={{ fontSize: 12, marginTop: 4 }}>{meta1}</div>}
+                  {l.teacher && <div class="faint" style={{ fontSize: 12, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.teacher}</div>}
                 </div>
                 <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                   {markable
