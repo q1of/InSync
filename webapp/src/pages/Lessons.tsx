@@ -2,14 +2,14 @@ import { useState, useEffect } from 'preact/hooks';
 import { getScheduleApi, getOptoutsApi, setOptoutApi, Lesson } from '../api/client';
 import { HistoryList } from './History';
 import { useTelegram } from '../hooks/useTelegram';
-import { IconCalendar } from '../components/icons';
+import { IconCalendar, IconChevron } from '../components/icons';
 
 function fmtTime(epoch: number | null): string {
   if (!epoch) return '';
   return new Date(epoch * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-interface Day { key: string; label: string; tag: string; dow: string; dnum: number; lessons: Lesson[]; }
+interface Day { key: string; label: string; tag: string; lessons: Lesson[]; }
 
 function buildDays(lessons: Lesson[]): Day[] {
   const now = new Date();
@@ -28,12 +28,7 @@ function buildDays(lessons: Lesson[]): Day[] {
     const d = new Date(k);
     const label = d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
     const tag = k === todayKey ? 'Сегодня' : k === tomorrowKey ? 'Завтра' : '';
-    days.push({
-      key: k, label, tag,
-      dow: d.toLocaleDateString('ru-RU', { weekday: 'short' }),
-      dnum: d.getDate(),
-      lessons: ls.sort((a, b) => (a.start_epoch || 0) - (b.start_epoch || 0)),
-    });
+    days.push({ key: k, label, tag, lessons: ls.sort((a, b) => (a.start_epoch || 0) - (b.start_epoch || 0)) });
   }
   days.sort((a, b) => +new Date(a.key) - +new Date(b.key));
   return days;
@@ -43,8 +38,8 @@ export function Lessons() {
   const { haptic } = useTelegram();
   const [tab, setTab] = useState<'schedule' | 'history'>('schedule');
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
-  const [off, setOff] = useState<Set<number>>(new Set());
-  const [sel, setSel] = useState<string>('');   // выбранный день
+  const [off, setOff] = useState<Set<number>>(new Set());   // start_epoch отключённых пар
+  const [open, setOpen] = useState<Set<string>>(new Set()); // раскрытые дни
 
   useEffect(() => {
     getScheduleApi(7).then((r) => setLessons(r.lessons)).catch(() => setLessons([]));
@@ -55,26 +50,29 @@ export function Lessons() {
   const upcoming = (lessons || []).filter((l) => (l.end_epoch || l.start_epoch || 0) >= now);
   const days = buildDays(upcoming);
 
+  // По умолчанию раскрыт первый (ближайший) день.
   useEffect(() => {
-    if (days.length && (!sel || !days.some((d) => d.key === sel))) setSel(days[0].key);
+    if (days.length && open.size === 0) setOpen(new Set([days[0].key]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessons]);
+
+  const toggleDay = (k: string) => {
+    haptic?.selectionChanged?.();
+    setOpen((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  };
 
   const toggleOptout = async (l: Lesson) => {
     const se = l.start_epoch;
     if (!se) return;
-    const enable = !off.has(se);
+    const enable = !off.has(se);   // не отключена → отключаем отметку
     setOff((prev) => { const n = new Set(prev); enable ? n.add(se) : n.delete(se); return n; });
     haptic?.impactOccurred?.('light');
     try {
       await setOptoutApi({ start_epoch: se, end_epoch: l.end_epoch, lesson_name: l.name, enabled: enable });
     } catch {
-      setOff((prev) => { const n = new Set(prev); enable ? n.delete(se) : n.add(se); return n; });
+      setOff((prev) => { const n = new Set(prev); enable ? n.delete(se) : n.add(se); return n; });  // откат
     }
   };
-
-  const selDay = days.find((d) => d.key === sel) || days[0];
-  const offToday = selDay ? selDay.lessons.filter((l) => off.has(l.start_epoch || 0)).length : 0;
 
   return (
     <div class="screen screen-pad-top">
@@ -98,43 +96,13 @@ export function Lessons() {
             </div>
           ) : (
             <>
-              {/* Лента дней недели */}
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', margin: '0 -20px 16px', padding: '2px 20px 6px' }}>
-                {days.map((d) => {
-                  const active = d.key === sel;
-                  return (
-                    <button key={d.key} onClick={() => { haptic?.selectionChanged?.(); setSel(d.key); }}
-                      style={{ flex: 'none', minWidth: 54, padding: '9px 12px', borderRadius: 16, cursor: 'pointer',
-                        fontFamily: 'inherit', textAlign: 'center',
-                        background: active ? '#FFFFFF' : 'var(--bg-2)',
-                        color: active ? '#09090B' : 'var(--ink-dim)',
-                        border: '1px solid ' + (active ? '#FFFFFF' : 'var(--hairline)'),
-                        boxShadow: active ? '0 8px 20px -8px rgba(255,255,255,0.3)' : 'none',
-                        transition: 'background 0.2s, color 0.2s' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: active ? 0.65 : 1 }}>{d.dow}</div>
-                      <div style={{ fontSize: 19, fontWeight: 700, fontFamily: 'Unbounded, sans-serif', marginTop: 2 }}>{d.dnum}</div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Заголовок выбранного дня */}
-              {selDay && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, fontSize: 17, textTransform: 'capitalize' }}>
-                    {selDay.tag || selDay.label}
-                  </div>
-                  <div class="faint" style={{ fontSize: 12.5, marginTop: 3 }}>
-                    {selDay.lessons.length} {plural(selDay.lessons.length, 'пара', 'пары', 'пар')}
-                    {offToday > 0 ? ` · ${offToday} без отметки` : ''}
-                  </div>
-                </div>
-              )}
-
-              {/* Пары выбранного дня */}
+              <p class="muted" style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
+                Твоё расписание на неделю. Открой день и отключи пары, на которых не хочешь отмечаться.
+              </p>
               <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {selDay?.lessons.map((l) => (
-                  <LessonRow key={l.start_epoch} l={l} off={off} onToggle={toggleOptout} />
+                {days.map((d) => (
+                  <DayCard key={d.key} day={d} open={open.has(d.key)} offSet={off}
+                           onToggleDay={() => toggleDay(d.key)} onToggleOptout={toggleOptout} />
                 ))}
               </div>
             </>
@@ -149,30 +117,60 @@ export function Lessons() {
   );
 }
 
-function LessonRow({ l, off, onToggle }: { l: Lesson; off: Set<number>; onToggle: (l: Lesson) => void }) {
-  const markable = isMarkable(l.type);
-  const isOff = markable && off.has(l.start_epoch || 0);
-  const meta1 = [l.room && `ауд. ${l.room}`, l.subgroup].filter(Boolean).join(' · ');
+function DayCard({ day, open, offSet, onToggleDay, onToggleOptout }: {
+  day: Day; open: boolean; offSet: Set<number>;
+  onToggleDay: () => void; onToggleOptout: (l: Lesson) => void;
+}) {
+  const offCount = day.lessons.filter((l) => offSet.has(l.start_epoch || 0)).length;
   return (
-    <div class="panel" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 13px', opacity: isOff ? 0.55 : 1 }}>
-      <div style={{ width: 50, flex: 'none', textAlign: 'center', borderRadius: 12, padding: '7px 0',
-        background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-        <div style={{ fontWeight: 700, fontSize: 13.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
-        <div class="faint" style={{ fontSize: 10.5, marginTop: 1 }}>{fmtTime(l.end_epoch)}</div>
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div class="row" style={{ gap: 6, alignItems: 'center' }}>
-          <TypeTag type={l.type} />
-          <span style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+    <div class="panel" style={{ padding: 0, overflow: 'hidden' }}>
+      <button onClick={onToggleDay} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+        padding: '15px 16px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink)', textAlign: 'left' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15.5, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {day.tag && <span style={{ color: 'var(--live)' }}>{day.tag} · </span>}{day.label}
+          </div>
+          <div class="faint" style={{ fontSize: 13, marginTop: 2 }}>
+            {day.lessons.length} {plural(day.lessons.length, 'пара', 'пары', 'пар')}
+            {offCount > 0 ? ` · ${offCount} без отметки` : ''}
+          </div>
         </div>
-        {meta1 && <div class="faint" style={{ fontSize: 12, marginTop: 5 }}>{meta1}</div>}
-        {l.teacher && <div class="faint" style={{ fontSize: 12, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.teacher}</div>}
-      </div>
-      <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-        {markable
-          ? <OptoutToggle on={isOff} onClick={() => onToggle(l)} />
-          : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25, whiteSpace: 'nowrap' }}>отмечает<br />преподаватель</span>}
-      </div>
+        <span style={{ display: 'flex', transition: 'transform 0.22s', transform: open ? 'rotate(180deg)' : 'none', color: 'var(--ink-faint)' }}>
+          <IconChevron size={20} />
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ padding: '0 14px 8px' }}>
+          {day.lessons.map((l) => {
+            const markable = isMarkable(l.type);          // отмечаемся только на лекциях
+            const isOff = markable && offSet.has(l.start_epoch || 0);
+            return (
+              <div key={l.start_epoch} class="row" style={{ alignItems: 'center', gap: 10, padding: '9px 0',
+                borderTop: '1px solid var(--hairline)', opacity: isOff ? 0.5 : 1 }}>
+                <div style={{ width: 44, flex: 'none', textAlign: 'right' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5, fontFamily: 'Unbounded, monospace' }}>{fmtTime(l.start_epoch)}</div>
+                  <div class="faint" style={{ fontSize: 11.5 }}>{fmtTime(l.end_epoch)}</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div class="row" style={{ gap: 6, alignItems: 'center' }}>
+                    <TypeTag type={l.type} />
+                    <span style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+                  </div>
+                  <div class="faint" style={{ fontSize: 12, marginTop: 2, lineHeight: 1.35 }}>
+                    {[l.room && `ауд. ${l.room}`, l.teacher, l.subgroup].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                  {markable
+                    ? <OptoutToggle on={isOff} onClick={() => onToggleOptout(l)} />
+                    : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25, whiteSpace: 'nowrap' }}>отмечает<br />преподаватель</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -188,6 +186,7 @@ function plural(n: number, one: string, few: string, many: string): string {
 const isLecture = (t?: string) => /лекц|^лк$|lect/i.test((t || '').trim());
 const isPractice = (t?: string) => /практ|^пр$|^пз$/i.test((t || '').trim());
 const isLab = (t?: string) => /лаб|^лр$/i.test((t || '').trim());
+// Самоотметка по QR только на лекциях; практику/лаб отмечает преподаватель.
 const isMarkable = (t?: string) => !isPractice(t) && !isLab(t);
 
 function shortType(t?: string): string {
@@ -211,6 +210,8 @@ function TypeTag({ type }: { type?: string }) {
   );
 }
 
+// Маленький тумблер с подписью «не отмечать» — чтобы было ясно: он не про отметку,
+// а про то, чтобы НЕ отмечаться на этой паре. Неброский, не отвлекает от расписания.
 function OptoutToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <div onClick={onClick} title="Не отмечаться на этой паре"
