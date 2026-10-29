@@ -612,6 +612,11 @@ async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str |
         raw, err = await cli.grpc(SELF_APPROVE_URL, payload, timeout=9.0)
         if err:
             return False, err
+        if raw == b"":
+            # Пустой ответ, но с подтверждённым grpc-status=0 (это гарантирует grpc()):
+            # RPC прошёл успешно — считаем отметку принятой. Ложного «отмечен» нет,
+            # т.к. ответы без статуса grpc() уже превращает в ошибку.
+            return True, None
         approved, reason = _parse_selfapprove(raw or b"")
         if approved is True:
             return True, None
