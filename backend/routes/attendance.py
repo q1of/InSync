@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import time
 
@@ -29,8 +30,8 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
     from backend.main import bot  # ленивый импорт — избегаем циклической зависимости
     if not bot:
         return
-    marker = user.display_name
-    where = f"на «{lesson_name}»" if lesson_name else "на паре"
+    marker = html.escape(user.display_name or "")
+    where = f"на «{html.escape(lesson_name)}»" if lesson_name else "на паре"
     for r in raw_results:
         tid = r["telegram_id"]
         if tid == user.telegram_id:
@@ -39,14 +40,19 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
             continue
         try:
             if r.get("success"):
-                await bot.send_message(tid, f"✔️ Вас отметил {where} {marker} (через InSync).")
+                await bot.send_message(
+                    tid, f"✅ <b>Вас отметили</b>\n{marker} отметил вас {where} через InSync.",
+                    parse_mode="HTML")
             elif r.get("opted_out"):
                 await bot.send_message(
-                    tid, f"ℹ️ Вас не отметили {where} — вы отключили отметку на этой паре.")
+                    tid, f"ℹ️ <b>Вас не отметили</b>\nВы отключили отметку {where}.",
+                    parse_mode="HTML")
             elif _is_dead_session(r.get("error")):
                 # Именно слёт сессии — лично сообщаем, что нужно перезайти.
                 await bot.send_message(
-                    tid, f"⚠️ Не удалось отметить вас {where} — войдите заново в InSync (/start).")
+                    tid, f"⚠️ <b>Не удалось отметить</b>\nНе вышло отметить вас {where} — "
+                         f"войдите заново через /start.",
+                    parse_mode="HTML")
         except Exception:
             pass
 

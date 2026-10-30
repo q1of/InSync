@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 
@@ -43,8 +44,9 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
         try:
             await bot.send_message(
                 user.telegram_id,
-                f"✔️ Вход через Пульс МИРЭА выполнен!\n\n"
-                f"{user.display_name}, теперь можно пользоваться InSync.",
+                f"👋 <b>Вход выполнен</b>\n{html.escape(user.display_name or '')}, "
+                f"добро пожаловать в InSync.",
+                parse_mode="HTML",
             )
         except Exception:
             pass
@@ -170,7 +172,9 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
                 try:
                     await bot.send_message(
                         user.telegram_id,
-                        "⚠️ Сессия Пульса МИРЭА слетела — нужно войти заново. Нажмите /start.",
+                        "⚠️ <b>Сессия Пульса истекла</b>\nЗайдите заново через /start, "
+                        "чтобы отмечаться на парах.",
+                        parse_mode="HTML",
                     )
                 except Exception:
                     pass

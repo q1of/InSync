@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import uvicorn
 
@@ -173,8 +174,9 @@ async def process_password(message: types.Message, state: FSMContext):
     ])
 
     await msg.edit_text(
-        f"✔️ Авторизация успешна!\n\nС возвращением, {message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
-        reply_markup=kb
+        f"✅ <b>Вход выполнен</b>\nС возвращением, {html.escape(message.from_user.first_name or '')}! "
+        f"Теперь можно пользоваться InSync.",
+        reply_markup=kb, parse_mode="HTML",
     )
 
 @dp.message(AuthState.waiting_for_2fa)
@@ -219,8 +221,9 @@ async def process_2fa(message: types.Message, state: FSMContext):
     ])
 
     await msg.edit_text(
-        f"✔️ Авторизация успешна!\n\nС возвращением, {message.from_user.first_name}!\nТеперь вы можете полноценно пользоваться InSync.",
-        reply_markup=kb
+        f"✅ <b>Вход выполнен</b>\nС возвращением, {html.escape(message.from_user.first_name or '')}! "
+        f"Теперь можно пользоваться InSync.",
+        reply_markup=kb, parse_mode="HTML",
     )
 
 
@@ -297,8 +300,9 @@ async def _check_one_session(telegram_id: int, encrypted: str) -> None:
         try:
             await bot.send_message(
                 telegram_id,
-                "⚠️ Сессия Пульса МИРЭА истекла. Зайди заранее (/start), чтобы "
-                "отмечаться на парах без спешки.",
+                "⚠️ <b>Сессия Пульса истекла</b>\nЗайдите заранее через /start, "
+                "чтобы отмечаться на парах без спешки.",
+                parse_mode="HTML",
             )
         except Exception:
             pass
