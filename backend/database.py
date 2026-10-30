@@ -272,12 +272,3 @@ async def set_session_invalid(telegram_id: int) -> None:
         await db.commit()
 
 
-async def get_friends_sessions(telegram_id: int) -> List[aiosqlite.Row]:
-    """Возвращает зашифрованные сессии всех принятых друзей с валидными сессиями."""
-    async with get_db() as db:
-        async with db.execute("""
-            SELECT u.* FROM users u
-            JOIN friendships f ON u.telegram_id = f.friend_id
-            WHERE f.user_id = ? AND f.status = 'accepted' AND u.session_valid = 1
-        """, (telegram_id,)) as cursor:
-            return await cursor.fetchall()
