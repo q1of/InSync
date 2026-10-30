@@ -45,12 +45,9 @@ export function HistoryList() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
       {groups.map((g) => (
         <div key={g.key}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
-            <span class="display" style={{ fontSize: 26, lineHeight: 1 }}>{g.dnum}</span>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 14, textTransform: 'capitalize' }}>{g.tag || g.dow}</div>
-              <div class="eyebrow" style={{ marginTop: 2 }}>{g.month}</div>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 16, textTransform: 'capitalize' }}>{g.tag || g.dow}</span>
+            <span class="eyebrow">{g.dnum} {g.month}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {g.items.map((s, i) => <ScanBlock key={i} scan={s} />)}

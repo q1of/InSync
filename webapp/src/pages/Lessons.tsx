@@ -105,15 +105,12 @@ export function Lessons() {
 function DaySection({ day, off, onToggle }: { day: Day; off: Set<number>; onToggle: (l: Lesson) => void }) {
   return (
     <div>
-      {/* Заголовок дня: крупная дата + день недели */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
-        <span class="display" style={{ fontSize: 26, lineHeight: 1 }}>{day.dnum}</span>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 14, textTransform: 'capitalize' }}>
-            {day.tag || day.dow}
-          </div>
-          <div class="eyebrow" style={{ marginTop: 2 }}>{day.month}</div>
-        </div>
+      {/* Заголовок дня — спокойная строка */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 16, textTransform: 'capitalize' }}>
+          {day.tag || day.dow}
+        </span>
+        <span class="eyebrow">{day.dnum} {day.month}</span>
       </div>
 
       {/* Пары — блоками */}
@@ -128,25 +125,29 @@ function LessonBlock({ l, off, onToggle }: { l: Lesson; off: Set<number>; onTogg
   const markable = isMarkable(l.type);
   const isOff = markable && off.has(l.start_epoch || 0);
   return (
-    <div class="panel" style={{ display: 'flex', gap: 12, padding: '13px 13px', alignItems: 'center', opacity: isOff ? 0.55 : 1 }}>
-      <div style={{ width: 50, flex: 'none', textAlign: 'center', borderRadius: 12, padding: '7px 0',
-        background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-        <div style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13.5 }}>{fmtTime(l.start_epoch)}</div>
-        <div class="faint" style={{ fontSize: 10.5, marginTop: 1 }}>{fmtTime(l.end_epoch)}</div>
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div class="row" style={{ gap: 7, alignItems: 'center' }}>
-          <TypeTag type={l.type} />
-          <span style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+    <div class="panel" style={{ padding: '13px 14px', opacity: isOff ? 0.5 : 1 }}>
+      {/* Верх: время · тип · управление */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
+        <span style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14 }}>{fmtTime(l.start_epoch)}</span>
+        <span class="faint" style={{ fontSize: 11.5 }}>– {fmtTime(l.end_epoch)}</span>
+        <TypeTag type={l.type} />
+        <div style={{ marginLeft: 'auto', flex: 'none' }}>
+          {markable
+            ? <OptoutToggle on={isOff} onClick={() => onToggle(l)} />
+            : <span class="faint" style={{ fontSize: 10.5 }}>отмечает препод.</span>}
         </div>
-        {l.room && <div class="faint" style={{ fontSize: 12.5, marginTop: 5 }}>ауд. {l.room}{l.subgroup ? ` · ${l.subgroup}` : ''}</div>}
-        {l.teacher && <div class="faint" style={{ fontSize: 12.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.teacher}</div>}
       </div>
-      <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-        {markable
-          ? <OptoutToggle on={isOff} onClick={() => onToggle(l)} />
-          : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25, whiteSpace: 'nowrap' }}>отмечает<br />преподаватель</span>}
-      </div>
+
+      {/* Название пары — переносится, не обрезается */}
+      <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{l.name}</div>
+
+      {/* Детали — аудитория и преподаватель, каждая на своей строке */}
+      {(l.room || l.subgroup) && (
+        <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>
+          {[l.room && `ауд. ${l.room}`, l.subgroup].filter(Boolean).join(' · ')}
+        </div>
+      )}
+      {l.teacher && <div class="faint" style={{ fontSize: 12.5, marginTop: 2, lineHeight: 1.4 }}>{l.teacher}</div>}
     </div>
   );
 }

@@ -280,7 +280,7 @@ export function Scanner({ active }: Props) {
           </svg>
         </div>
 
-        <h1 style={{ fontSize: 31, lineHeight: 1.08 }}>Лучший бот<br /><span class="sig-text">для скана пар</span></h1>
+        <h1 style={{ fontSize: 30, lineHeight: 1.08 }}>Лучший бот<br /><span class="sig-text">для отметки на паре</span></h1>
         <p class="muted" style={{ fontSize: 14.5, lineHeight: 1.5, maxWidth: 280, margin: '14px auto 0' }}>
           Отметься на паре — за себя и друзей — одним сканом.
         </p>
