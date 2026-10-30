@@ -60,7 +60,7 @@ export function Friends({ onPendingChange }: Props) {
 
   return (
     <div class="screen screen-pad-top">
-      <h1 style={{ fontSize: 26, marginBottom: 18 }}>Друзья</h1>
+      <h1 style={{ fontSize: 30, marginBottom: 22 }}>Друзья</h1>
 
       <div class="segment" style={{ marginBottom: 20 }}>
         <div class="thumb" style={{ left: tab === 'friends' ? 4 : '50%', width: 'calc(50% - 4px)' }} />

@@ -76,7 +76,7 @@ export function Lessons() {
 
   return (
     <div class="screen screen-pad-top">
-      <h1 style={{ fontSize: 26, marginBottom: 18 }}>Пары</h1>
+      <h1 style={{ fontSize: 30, marginBottom: 22 }}>Пары</h1>
 
       <div class="segment" style={{ marginBottom: 20 }}>
         <div class="thumb" style={{ left: tab === 'schedule' ? 4 : '50%', width: 'calc(50% - 4px)' }} />
