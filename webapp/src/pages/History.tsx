@@ -1,76 +1,83 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getHistoryApi, Scan } from '../api/client';
-import { IconHistory, IconCheck, IconX } from '../components/icons';
+import { IconHistory } from '../components/icons';
 
-// Список истории без собственной обёртки/заголовка — встраивается во вкладку «Пары».
+interface DayGroup { key: string; tag: string; dnum: number; dow: string; month: string; items: Scan[]; }
+
+// Список истории без заголовка — встраивается во вкладку «Пары».
 export function HistoryList() {
   const [scans, setScans] = useState<Scan[] | null>(null);
 
   useEffect(() => { getHistoryApi().then((r) => setScans(r.scans)).catch(() => setScans([])); }, []);
 
-  const groups = (scans || []).reduce((acc, s) => {
+  const now = new Date();
+  const todayKey = now.toDateString();
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  const yKey = y.toDateString();
+
+  const groups: DayGroup[] = [];
+  const idx = new Map<string, DayGroup>();
+  for (const s of scans || []) {
     const d = new Date((s.created_at || 0) * 1000);
-    const key = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-    (acc[key] ||= []).push(s);
-    return acc;
-  }, {} as Record<string, Scan[]>);
+    const key = d.toDateString();
+    let g = idx.get(key);
+    if (!g) {
+      g = {
+        key, tag: key === todayKey ? 'Сегодня' : key === yKey ? 'Вчера' : '',
+        dnum: d.getDate(), dow: d.toLocaleDateString('ru-RU', { weekday: 'long' }),
+        month: d.toLocaleDateString('ru-RU', { month: 'long' }), items: [],
+      };
+      idx.set(key, g); groups.push(g);
+    }
+    g.items.push(s);
+  }
+
+  if (scans == null) return <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>;
+  if (scans.length === 0) return (
+    <div class="empty">
+      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}><IconHistory size={44} color="var(--ink-faint)" /></div>
+      <h3 style={{ color: 'var(--ink)', fontSize: 17, marginBottom: 6 }}>Пока пусто</h3>
+      <p style={{ fontSize: 14 }}>Отсканируй QR на паре — отметки появятся здесь</p>
+    </div>
+  );
 
   return (
-    <>
-      {scans == null ? (
-        <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>
-      ) : scans.length === 0 ? (
-        <div class="empty">
-          <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'center' }}><IconHistory size={44} color="var(--ink-faint)" /></div>
-          <h3 style={{ color: 'var(--ink)', fontSize: 17, marginBottom: 6 }}>Пока пусто</h3>
-          <p style={{ fontSize: 14 }}>Отсканируй QR на паре — отметки появятся здесь</p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-          {Object.entries(groups).map(([day, items]) => (
-            <div key={day}>
-              <p class="eyebrow" style={{ marginBottom: 10 }}>{day}</p>
-              <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {items.map((s, i) => <ScanCard key={i} scan={s} />)}
-              </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+      {groups.map((g) => (
+        <div key={g.key}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+            <span class="display" style={{ fontSize: 26, lineHeight: 1 }}>{g.dnum}</span>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, textTransform: 'capitalize' }}>{g.tag || g.dow}</div>
+              <div class="eyebrow" style={{ marginTop: 2 }}>{g.month}</div>
             </div>
-          ))}
+          </div>
+          <div style={{ borderTop: '1px solid var(--hairline)' }}>
+            {g.items.map((s, i) => <ScanRow key={i} scan={s} />)}
+          </div>
         </div>
-      )}
-    </>
+      ))}
+    </div>
   );
 }
 
-function ScanCard({ scan }: { scan: Scan }) {
+function ScanRow({ scan }: { scan: Scan }) {
   const time = new Date((scan.created_at || 0) * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const allOk = scan.successful === scan.total;
   const accent = allOk ? 'var(--live)' : scan.successful === 0 ? 'var(--miss)' : 'var(--warn)';
+  const who = scan.targets.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
   return (
-    <div class="panel" style={{ padding: 16 }}>
-      <div class="row" style={{ justifyContent: 'space-between', marginBottom: 12, gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {scan.lesson_name || 'Пара'}
-          </div>
-          <div class="faint" style={{ fontSize: 12.5, marginTop: 2 }}>{time}</div>
+    <div style={{ display: 'flex', gap: 14, padding: '14px 2px', borderBottom: '1px solid var(--hairline)', alignItems: 'flex-start' }}>
+      <div style={{ width: 46, flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14, paddingTop: 1 }}>{time}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {scan.lesson_name || 'Пара'}
         </div>
-        <span class="pill" style={{ padding: '4px 11px', fontSize: 12.5, color: accent, flex: 'none' }}>
-          {scan.successful}/{scan.total} отмечено
-        </span>
+        <div class="faint" style={{ fontSize: 12.5, marginTop: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who}</div>
       </div>
-      <div class="faint" style={{ fontSize: 12, marginBottom: 8 }}>Вы отметили</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        {scan.targets.map((t, i) => (
-          <div key={i} class="row" style={{ gap: 10 }}>
-            <span style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', flex: 'none',
-              background: t.success ? 'var(--live-dim)' : 'var(--miss-dim)', color: t.success ? 'var(--live)' : 'var(--miss)' }}>
-              {t.success ? <IconCheck size={13} stroke={2.8} /> : <IconX size={13} stroke={2.8} />}
-            </span>
-            <span style={{ fontSize: 14.5, fontWeight: t.is_self ? 600 : 400 }}>{t.name}</span>
-            {!t.success && t.error && <span class="faint" style={{ fontSize: 12.5, marginLeft: 'auto' }}>{t.error}</span>}
-          </div>
-        ))}
-      </div>
+      <span style={{ flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, color: accent, paddingTop: 1 }}>
+        {scan.successful}/{scan.total}
+      </span>
     </div>
   );
 }
