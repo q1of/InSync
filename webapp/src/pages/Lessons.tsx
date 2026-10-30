@@ -106,7 +106,7 @@ function DaySection({ day, off, onToggle }: { day: Day; off: Set<number>; onTogg
   return (
     <div>
       {/* Заголовок дня: крупная дата + день недели */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
         <span class="display" style={{ fontSize: 26, lineHeight: 1 }}>{day.dnum}</span>
         <div>
           <div style={{ fontWeight: 600, fontSize: 14, textTransform: 'capitalize' }}>
@@ -116,23 +116,23 @@ function DaySection({ day, off, onToggle }: { day: Day; off: Set<number>; onTogg
         </div>
       </div>
 
-      {/* Пары списком, разделённые тонкой линией */}
-      <div style={{ borderTop: '1px solid var(--hairline)' }}>
-        {day.lessons.map((l) => <LessonRow key={l.start_epoch} l={l} off={off} onToggle={onToggle} />)}
+      {/* Пары — блоками */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {day.lessons.map((l) => <LessonBlock key={l.start_epoch} l={l} off={off} onToggle={onToggle} />)}
       </div>
     </div>
   );
 }
 
-function LessonRow({ l, off, onToggle }: { l: Lesson; off: Set<number>; onToggle: (l: Lesson) => void }) {
+function LessonBlock({ l, off, onToggle }: { l: Lesson; off: Set<number>; onToggle: (l: Lesson) => void }) {
   const markable = isMarkable(l.type);
   const isOff = markable && off.has(l.start_epoch || 0);
   return (
-    <div style={{ display: 'flex', gap: 14, padding: '14px 2px', borderBottom: '1px solid var(--hairline)',
-      alignItems: 'flex-start', opacity: isOff ? 0.5 : 1 }}>
-      <div style={{ width: 46, flex: 'none', paddingTop: 1 }}>
-        <div style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14 }}>{fmtTime(l.start_epoch)}</div>
-        <div class="faint" style={{ fontSize: 11, marginTop: 3 }}>{fmtTime(l.end_epoch)}</div>
+    <div class="panel" style={{ display: 'flex', gap: 12, padding: '13px 13px', alignItems: 'center', opacity: isOff ? 0.55 : 1 }}>
+      <div style={{ width: 50, flex: 'none', textAlign: 'center', borderRadius: 12, padding: '7px 0',
+        background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
+        <div style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13.5 }}>{fmtTime(l.start_epoch)}</div>
+        <div class="faint" style={{ fontSize: 10.5, marginTop: 1 }}>{fmtTime(l.end_epoch)}</div>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div class="row" style={{ gap: 7, alignItems: 'center' }}>
@@ -142,7 +142,7 @@ function LessonRow({ l, off, onToggle }: { l: Lesson; off: Set<number>; onToggle
         {l.room && <div class="faint" style={{ fontSize: 12.5, marginTop: 5 }}>ауд. {l.room}{l.subgroup ? ` · ${l.subgroup}` : ''}</div>}
         {l.teacher && <div class="faint" style={{ fontSize: 12.5, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.teacher}</div>}
       </div>
-      <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 2 }}>
+      <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
         {markable
           ? <OptoutToggle on={isOff} onClick={() => onToggle(l)} />
           : <span class="faint" style={{ fontSize: 10.5, textAlign: 'right', lineHeight: 1.25, whiteSpace: 'nowrap' }}>отмечает<br />преподаватель</span>}

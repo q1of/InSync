@@ -52,8 +52,8 @@ export function HistoryList() {
               <div class="eyebrow" style={{ marginTop: 2 }}>{g.month}</div>
             </div>
           </div>
-          <div style={{ borderTop: '1px solid var(--hairline)' }}>
-            {g.items.map((s, i) => <ScanRow key={i} scan={s} />)}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {g.items.map((s, i) => <ScanBlock key={i} scan={s} />)}
           </div>
         </div>
       ))}
@@ -61,21 +61,24 @@ export function HistoryList() {
   );
 }
 
-function ScanRow({ scan }: { scan: Scan }) {
+function ScanBlock({ scan }: { scan: Scan }) {
   const time = new Date((scan.created_at || 0) * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const allOk = scan.successful === scan.total;
   const accent = allOk ? 'var(--live)' : scan.successful === 0 ? 'var(--miss)' : 'var(--warn)';
   const who = scan.targets.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
   return (
-    <div style={{ display: 'flex', gap: 14, padding: '14px 2px', borderBottom: '1px solid var(--hairline)', alignItems: 'flex-start' }}>
-      <div style={{ width: 46, flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14, paddingTop: 1 }}>{time}</div>
+    <div class="panel" style={{ display: 'flex', gap: 12, padding: '13px 13px', alignItems: 'center' }}>
+      <div style={{ width: 50, flex: 'none', textAlign: 'center', borderRadius: 12, padding: '9px 0',
+        background: 'var(--bg-2)', border: '1px solid var(--hairline)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13.5 }}>
+        {time}
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {scan.lesson_name || 'Пара'}
         </div>
-        <div class="faint" style={{ fontSize: 12.5, marginTop: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who}</div>
+        <div class="faint" style={{ fontSize: 12.5, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who}</div>
       </div>
-      <span style={{ flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, color: accent, paddingTop: 1 }}>
+      <span style={{ flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, color: accent }}>
         {scan.successful}/{scan.total}
       </span>
     </div>

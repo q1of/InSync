@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi, getSessionApi } from '../api/client';
-import type { Friend, Lesson } from '../api/client';
+import type { Friend } from '../api/client';
 import { IconCheck, IconX, IconScan, IconUsers } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
@@ -26,18 +26,6 @@ interface Target { id: number; name: string; is_self: boolean; status: Status; e
 
 const MAX_DEAD_ATTEMPTS = 3;
 
-function fmtTime(epoch?: number | null): string {
-  if (!epoch) return '';
-  return new Date(epoch * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-function fmtIn(sec: number): string {
-  const m = Math.max(0, Math.round(sec / 60));
-  if (m < 1) return 'меньше минуты';
-  if (m < 60) return `${m} мин`;
-  const h = Math.floor(m / 60), mm = m % 60;
-  return mm ? `${h} ч ${mm} мин` : `${h} ч`;
-}
-
 interface Props { active: boolean }
 
 export function Scanner({ active }: Props) {
@@ -51,8 +39,6 @@ export function Scanner({ active }: Props) {
   const [camStarting, setCamStarting] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number; step: number } | null>(null);
-  const [schedule, setSchedule] = useState<Lesson[]>([]);
-  const [nowTs, setNowTs] = useState(Date.now());
 
   const targetsRef = useRef<Target[]>([]);
   const scanIdRef = useRef('');
@@ -75,16 +61,7 @@ export function Scanner({ active }: Props) {
     getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
     // Проактивно проверяем свою сессию — чтобы перезайти ЗАРАНЕЕ, а не когда уже висит QR.
     getSessionApi(true).then((s) => setSessionBad(!!s.logged_in && !s.valid)).catch(() => {});
-    // Ближайшая пара для hero.
-    getScheduleApi(2).then((r) => setSchedule(r.lessons)).catch(() => {});
-    setNowTs(Date.now());
   }, [active]);
-
-  // Живой отсчёт до пары — обновляем раз в 30с.
-  useEffect(() => {
-    const t = setInterval(() => setNowTs(Date.now()), 30000);
-    return () => clearInterval(t);
-  }, []);
 
   const nativeSupported = () => {
     const tg: any = webApp;
@@ -254,12 +231,6 @@ export function Scanner({ active }: Props) {
   const crewLine = crew ? `С тобой — ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : 'Отметим только тебя';
   const marked = targets.filter((t) => t.status === 'done');
 
-  // Ближайшая / идущая сейчас пара для hero.
-  const ns = nowTs / 1000;
-  const sched = [...schedule].filter((l) => l.start_epoch).sort((a, b) => (a.start_epoch! - b.start_epoch!));
-  const ongoing = sched.find((l) => l.start_epoch! <= ns && ns <= (l.end_epoch || l.start_epoch! + 5400));
-  const nextL = sched.find((l) => (l.start_epoch || 0) > ns);
-
   // Показываем только успешные отметки. Кого не отметили — уходит личным
   // сообщением от бота, полные логи в приложении не нужны.
   const ResultList = () => (
@@ -296,60 +267,33 @@ export function Scanner({ active }: Props) {
         </div>
       )}
 
-      {/* Hero */}
-      <div class="panel enter" style={{ padding: 30, overflow: 'hidden', position: 'relative',
-        background: 'radial-gradient(120% 80% at 50% 0%, #1b1b21, #0d0d10 60%)' }}>
-        <div class="hero-stage" style={{ height: 126 }}>
+      {/* Главная: большой знак «на фоне», без карточки и рамок */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        textAlign: 'center', minHeight: '62vh' }}>
+        <div style={{ position: 'relative', marginBottom: 30 }}>
           <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            width: 150, height: 150, borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(255,255,255,0.10), transparent 64%)' }} />
-          <div class="hero-ring" style={{ width: 128, height: 128, opacity: 0.32 }} />
-          <div class="hero-ring" style={{ width: 98, height: 98, opacity: 0.5 }} />
-          <div class="hero-tile" style={{ width: 70, height: 70, borderRadius: 20 }}>
-            <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 38, height: 38 }}>
-              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
-              <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
-            </svg>
-          </div>
+            width: 300, height: 300, borderRadius: '50%', pointerEvents: 'none',
+            background: 'radial-gradient(circle, rgba(255,255,255,0.11), transparent 60%)' }} />
+          <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 132, height: 132, position: 'relative' }}>
+            <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
+            <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
+          </svg>
         </div>
 
-        {ongoing ? (
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
-            <div class="eyebrow" style={{ color: 'var(--live)' }}>Идёт сейчас</div>
-            <h2 style={{ fontSize: 22, marginTop: 9, padding: '0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ongoing.name}</h2>
-            <div class="muted" style={{ fontSize: 13.5, marginTop: 8 }}>
-              до {fmtTime(ongoing.end_epoch)}{ongoing.room ? ` · ауд. ${ongoing.room}` : ''}
-            </div>
-          </div>
-        ) : nextL ? (
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
-            <div class="eyebrow">Следующая пара</div>
-            <h2 style={{ fontSize: 22, marginTop: 9, padding: '0 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nextL.name}</h2>
-            <div class="muted" style={{ fontSize: 13.5, marginTop: 8 }}>
-              {fmtTime(nextL.start_epoch)}{nextL.room ? ` · ауд. ${nextL.room}` : ''}
-            </div>
-            <div class="display" style={{ fontSize: 15, marginTop: 9 }}>через {fmtIn((nextL.start_epoch || 0) - ns)}</div>
-          </div>
-        ) : (
-          <div style={{ textAlign: 'center', marginTop: 10 }}>
-            <h1 style={{ fontSize: 30, lineHeight: 1.06 }}>На&nbsp;месте<br /><span class="sig-text">одним касанием</span></h1>
-            <p class="muted" style={{ fontSize: 14, marginTop: 10 }}>Впереди пар нет — свободно</p>
-          </div>
-        )}
+        <h1 style={{ fontSize: 31, lineHeight: 1.08 }}>Лучший бот<br /><span class="sig-text">для скана пар</span></h1>
+        <p class="muted" style={{ fontSize: 14.5, lineHeight: 1.5, maxWidth: 280, margin: '14px auto 0' }}>
+          Отметься на паре — за себя и друзей — одним сканом.
+        </p>
 
         <button class="btn" onClick={startScan}
-          style={{ marginTop: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16 }}>
+          style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 16 }}>
           <IconScan size={20} stroke={2.2} /> Сканировать QR
         </button>
 
-        <div class="row" style={{ justifyContent: 'center', gap: 7, marginTop: 15 }}>
+        <div class="row" style={{ justifyContent: 'center', gap: 7, marginTop: 16 }}>
           <IconUsers size={14} color="var(--ink-faint)" />
           <span class="faint" style={{ fontSize: 13 }}>{crewLine}</span>
         </div>
-      </div>
-
-      <div class="row" style={{ justifyContent: 'center', gap: 8, marginTop: 14 }}>
-        <span class="faint" style={{ fontSize: 12.5 }}>История отметок — во вкладке «Пары»</span>
       </div>
 
       {/* Единый попап итога (телефон и ПК): показываем только успешные отметки */}
