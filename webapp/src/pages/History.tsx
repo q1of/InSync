@@ -64,20 +64,20 @@ function ScanBlock({ scan }: { scan: Scan }) {
   const accent = allOk ? 'var(--live)' : scan.successful === 0 ? 'var(--miss)' : 'var(--warn)';
   const who = scan.targets.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
   return (
-    <div class="panel" style={{ display: 'flex', gap: 12, padding: '13px 13px', alignItems: 'center' }}>
-      <div style={{ width: 50, flex: 'none', textAlign: 'center', borderRadius: 12, padding: '9px 0',
-        background: 'var(--bg-2)', border: '1px solid var(--hairline)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13.5 }}>
-        {time}
+    <div class="panel" style={{ padding: '13px 14px' }}>
+      {/* Верх: время · статус */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
+        <span style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14 }}>{time}</span>
+        <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, color: accent }}>
+          {scan.successful}/{scan.total}
+        </span>
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {scan.lesson_name || 'Пара'}
-        </div>
-        <div class="faint" style={{ fontSize: 12.5, marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who}</div>
-      </div>
-      <span style={{ flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, color: accent }}>
-        {scan.successful}/{scan.total}
-      </span>
+
+      {/* Название пары — переносится */}
+      <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{scan.lesson_name || 'Пара'}</div>
+
+      {/* Кого отметили */}
+      <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>Отмечены: {who}</div>
     </div>
   );
 }
