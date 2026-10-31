@@ -326,32 +326,29 @@ class PulseLogin:
         # застревает, а пользователь видит ложное «Неверный код». Жмём «Skip» за него.
         page_now = (_page_id(html) or "").lower()
         if ("max-account-config" in url_s or page_now.startswith(("login-max-otp", "max-otp"))) \
-                and self._skip_count < 3 and depth < 6:
+                and self._skip_count < 5 and depth < 8:
             self._skip_count += 1
             action = _kc_login_action(html, url_s)
             if action:
-                logger.warning("Пропускаем принудительную настройку MAX (skip_logout=false)")
+                # ВАЖНО: ровно ОДИН запрос на каждый показ страницы. session_code в action
+                # одноразовый — второй запрос на тот же action ломает обмен токена (auth_error).
+                # Способ «Skip» (GET-ссылка или POST-форма) рисуется в JS, поэтому пробуем по
+                # очереди: нечётная попытка — GET, чётная — POST, и на каждой свежий session_code
+                # (его берём из нового ответа при следующем заходе в _analyze).
                 sep = "&" if "?" in action else "?"
-                last = None
-                # «Skip» у МИРЭА — ссылка/кнопка со skip_logout=false: пробуем GET, затем POST.
-                for mode in ("get", "post"):
-                    try:
-                        if mode == "get":
-                            last = await self.client.get(f"{action}{sep}skip_logout=false",
-                                                         headers={"Referer": url_s})
-                        else:
-                            last = await self.client.post(
-                                action, data={"skip_logout": "false"},
-                                headers={"Referer": url_s, "Origin": SSO,
-                                         "Content-Type": "application/x-www-form-urlencoded"})
-                    except httpx.HTTPError:
-                        continue
-                    moved = ("max-account-config" not in str(last.url)
-                             and not (_page_id(last.text or "") or "").lower().startswith(("login-max-otp", "max-otp")))
-                    if moved:
-                        return await self._analyze(last, step + "+skipmax", depth + 1)
-                if last is not None:
-                    return await self._analyze(last, step + "+skipmax", depth + 1)
+                logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
+                try:
+                    if self._skip_count % 2 == 1:
+                        resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
+                                                      headers={"Referer": url_s})
+                    else:
+                        resp2 = await self.client.post(
+                            action, data={"skip_logout": "false"},
+                            headers={"Referer": url_s, "Origin": SSO,
+                                     "Content-Type": "application/x-www-form-urlencoded"})
+                except httpx.HTTPError as e:
+                    return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
+                return await self._analyze(resp2, step + "+skipmax", depth + 1)
 
         # Код 2FA один, форма одна — неважно, прислан он на почту или в MAX.
         # Никакого разделения «MAX / не-MAX» нет: это просто форма ввода кода.
