@@ -322,29 +322,33 @@ class PulseLogin:
 
         url_s = str(resp.url)
 
-        # МИРЭА после ВЕРНОГО 2FA-кода иногда показывает настройку MAX (required action
-        # execution=max-account-config, страница login-max-otp). Это НЕ ввод кода: без
-        # обработки пользователь видит ложное «Неверный код».
-        # MAX-страницу опознаём по её РОДНОМУ маркеру "showSkip" (а не по куску URL:
-        # после пропуска МИРЭА оставляет max-account-config в адресе, но страница уже
-        # ушла на callback — тогда скипать нельзя, иначе ломаем обмен кода → auth_error).
-        page_now = (_page_id(html) or "").lower()
-        is_max_page = page_now.startswith(("login-max-otp", "max-otp")) or ('"showSkip"' in html)
-        if is_max_page and depth < 60:
+        # МИРЭА после ВЕРНОГО 2FA-кода иногда показывает шаг MAX (required action
+        # execution=max-account-config, страница login-max-otp). Страница с "showSkip": true
+        # разрешает пропуск; без него это обычная форма кода из MAX, её обрабатывает
+        # _otp_challenge ниже. URL для опознания не годится: после пропуска в адресе остаётся
+        # max-account-config, хотя страница уже ушла на callback.
+        if re.search(r'"showSkip"\s*:\s*true', html) and depth < 60:
             if self._skip_count < 50:
                 self._skip_count += 1
-                # Это НЕ настоящая кнопка «Skip», а повторная загрузка страницы: skip_logout —
-                # параметр рестарта Keycloak (loginRestartFlowUrl), а как работает сам Skip, пока
-                # не выяснено. По трейсам после случайного числа загрузок (3, 9, 22, иногда >24)
-                # SSO сам ставит KEYCLOAK_IDENTITY и отдаёт form_post в Пульс. URL оставлен тем же,
-                # что дал этот результат. Выходим, как только страница перестала быть MAX.
                 action = _kc_login_action(html, url_s)
                 if action:
-                    sep = "&" if "?" in action else "?"
-                    logger.warning("Перезагружаем страницу MAX (попытка %d)", self._skip_count)
+                    logger.warning("Пропускаем шаг MAX (попытка %d)", self._skip_count)
                     try:
-                        resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
-                                                      headers={"Referer": url_s})
+                        if self._skip_count <= 3:
+                            # Кнопка «Skip» темы МИРЭА: форма kc-max-otp-buttons-form, POST на
+                            # loginAction с полем skip (в JS темы, чанк 3413).
+                            resp2 = await self.client.post(
+                                action, data={"skip": "true"},
+                                headers={"Referer": url_s, "Origin": SSO,
+                                         "Content-Type": "application/x-www-form-urlencoded"},
+                            )
+                        else:
+                            # Запас: повторная загрузка страницы. По трейсам после случайного числа
+                            # загрузок SSO сам отдаёт form_post в Пульс. skip_logout — параметр
+                            # рестарта Keycloak, не кнопка Skip; URL оставлен тем, что дал результат.
+                            sep = "&" if "?" in action else "?"
+                            resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
+                                                          headers={"Referer": url_s})
                     except httpx.HTTPError as e:
                         return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
                     return await self._analyze(resp2, step + "+skipmax", depth + 1)

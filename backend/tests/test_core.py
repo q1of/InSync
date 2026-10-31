@@ -152,3 +152,54 @@ class TestMaxSkip:
         assert not out.success
         assert "MAX" in out.error
         assert posted == []
+
+    def test_skip_button_is_post_to_login_action(self):
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append((request.method, request.url.path, request.content.decode()))
+            if request.url.path == "/api/mireaauth":
+                return httpx.Response(302, headers={
+                    "Location": "https://pulse.mirea.ru/services",
+                    "Set-Cookie": "Pulse.Auth.Cookie=x; Path=/",
+                })
+            if request.url.path == "/services":
+                return httpx.Response(200, text="ok")
+            if request.method == "POST":
+                return httpx.Response(200, text=FORM_POST_PAGE)
+            return httpx.Response(200, text=MAX_PAGE)
+
+        async def run():
+            pl = PulseLogin()
+            await pl.client.aclose()
+            pl.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+            try:
+                return await pl._analyze(await pl.client.get(MAX_URL), "code")
+            finally:
+                await pl.close()
+
+        out = asyncio.run(run())
+        assert out.success, out.error
+        assert ("POST", "/realms/mirea/login-actions/required-action", "skip=true") in requests
+        assert sum(1 for method, path, _ in requests if method == "GET" and "required-action" in path) == 1
+
+    def test_max_code_form_without_skip_asks_for_code(self):
+        html = MAX_PAGE.replace('"showSkip": true', '"showSkip": false')
+        calls = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.method)
+            return httpx.Response(200, text=html)
+
+        async def run():
+            pl = PulseLogin()
+            await pl.client.aclose()
+            pl.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+            try:
+                return await pl._analyze(await pl.client.get(MAX_URL), "code")
+            finally:
+                await pl.close()
+
+        out = asyncio.run(run())
+        assert out.challenge is not None
+        assert calls == ["GET"]
