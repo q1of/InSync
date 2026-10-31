@@ -343,8 +343,8 @@ class PulseLogin:
         # ушла на callback — тогда скипать нельзя, иначе ломаем обмен кода → auth_error).
         page_now = (_page_id(html) or "").lower()
         is_max_page = page_now.startswith(("login-max-otp", "max-otp")) or ('"showSkip"' in html)
-        if is_max_page and depth < 28:
-            if self._skip_count < 24:
+        if is_max_page and depth < 60:
+            if self._skip_count < 50:
                 self._skip_count += 1
                 # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
                 # склеиваем из loginAction. По трейсам этот шаг завершается не с первого запроса:
