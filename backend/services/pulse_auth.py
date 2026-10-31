@@ -326,26 +326,19 @@ class PulseLogin:
         # застревает, а пользователь видит ложное «Неверный код». Жмём «Skip» за него.
         page_now = (_page_id(html) or "").lower()
         if ("max-account-config" in url_s or page_now.startswith(("login-max-otp", "max-otp"))) \
-                and self._skip_count < 5 and depth < 8:
+                and self._skip_count < 8 and depth < 10:
             self._skip_count += 1
             action = _kc_login_action(html, url_s)
             if action:
-                # ВАЖНО: ровно ОДИН запрос на каждый показ страницы. session_code в action
-                # одноразовый — второй запрос на тот же action ломает обмен токена (auth_error).
-                # Способ «Skip» (GET-ссылка или POST-форма) рисуется в JS, поэтому пробуем по
-                # очереди: нечётная попытка — GET, чётная — POST, и на каждой свежий session_code
-                # (его берём из нового ответа при следующем заходе в _analyze).
+                # «Skip» у МИРЭА — GET-ссылка со skip_logout=false (это query-параметр, как
+                # &client_id/&kc_locale). У MAX-шага бывает несколько экранов, поэтому жмём
+                # «Skip» на КАЖДОМ свежем показе, пока не уйдём со страницы. ВАЖНО: ровно один
+                # запрос на показ — session_code одноразовый, повтор ломает обмен токена.
                 sep = "&" if "?" in action else "?"
-                logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
+                logger.warning("Пропускаем настройку MAX (GET, попытка %d)", self._skip_count)
                 try:
-                    if self._skip_count % 2 == 1:
-                        resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
-                                                      headers={"Referer": url_s})
-                    else:
-                        resp2 = await self.client.post(
-                            action, data={"skip_logout": "false"},
-                            headers={"Referer": url_s, "Origin": SSO,
-                                     "Content-Type": "application/x-www-form-urlencoded"})
+                    resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
+                                                  headers={"Referer": url_s})
                 except httpx.HTTPError as e:
                     return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
                 return await self._analyze(resp2, step + "+skipmax", depth + 1)
