@@ -335,9 +335,12 @@ class PulseLogin:
         # execution=max-account-config, страница login-max-otp / max-otp.ftl). Это НЕ
         # ввод кода — у формы есть «Skip» (skip_logout=false). Если не пропустить, вход
         # застревает, а пользователь видит ложное «Неверный код». Жмём «Skip» за него.
+        # MAX-страницу опознаём по её РОДНОМУ маркеру "showSkip" (а не по куску URL:
+        # после пропуска МИРЭА оставляет max-account-config в адресе, но страница уже
+        # ушла на callback — тогда скипать нельзя, иначе ломаем обмен кода → auth_error).
         page_now = (_page_id(html) or "").lower()
-        if ("max-account-config" in url_s or page_now.startswith(("login-max-otp", "max-otp"))) \
-                and self._skip_count < 8 and depth < 10:
+        is_max_page = page_now.startswith(("login-max-otp", "max-otp")) or ('"showSkip"' in html)
+        if is_max_page and self._skip_count < 8 and depth < 10:
             self._skip_count += 1
             # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
             # склеиваем из loginAction как запас. Это GET «пропустить настройку MAX, остаться в
