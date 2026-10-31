@@ -193,6 +193,17 @@ def _auto_submit_form(html: str, base_url: str):
     return None
 
 
+def _max_skip_url(html: str, base_url: str) -> str | None:
+    """Точный URL «Skip» со страницы настройки MAX (…&skip_logout=false) из kcContext.
+
+    У МИРЭА на этой странице kcContext содержит готовую ссылку «пропустить и остаться
+    в сессии» (skip_logout=false) с полным client_data. Берём её как есть — надёжнее,
+    чем склеивать из loginAction (у некоторых client_data ломает ручную склейку).
+    """
+    m = re.search(r'"((?:https?:|/)[^"]*?skip_logout=false)"', html)
+    return urljoin(base_url, _unescape(m.group(1))) if m else None
+
+
 def code_hint(challenge: Challenge) -> str:
     if challenge.kind == "email_code":
         if challenge.masked_email:
@@ -328,17 +339,20 @@ class PulseLogin:
         if ("max-account-config" in url_s or page_now.startswith(("login-max-otp", "max-otp"))) \
                 and self._skip_count < 8 and depth < 10:
             self._skip_count += 1
-            action = _kc_login_action(html, url_s)
-            if action:
-                # «Skip» у МИРЭА — GET-ссылка со skip_logout=false (это query-параметр, как
-                # &client_id/&kc_locale). У MAX-шага бывает несколько экранов, поэтому жмём
-                # «Skip» на КАЖДОМ свежем показе, пока не уйдём со страницы. ВАЖНО: ровно один
-                # запрос на показ — session_code одноразовый, повтор ломает обмен токена.
-                sep = "&" if "?" in action else "?"
-                logger.warning("Пропускаем настройку MAX (GET, попытка %d)", self._skip_count)
+            # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
+            # склеиваем из loginAction как запас. Это GET «пропустить настройку MAX, остаться в
+            # сессии». У MAX-шага бывает несколько экранов — жмём на каждом свежем показе. ВАЖНО:
+            # ровно один запрос на показ (session_code одноразовый, повтор ломает обмен токена).
+            skip_url = _max_skip_url(html, url_s)
+            if not skip_url:
+                action = _kc_login_action(html, url_s)
+                if action:
+                    sep = "&" if "?" in action else "?"
+                    skip_url = f"{action}{sep}skip_logout=false"
+            if skip_url:
+                logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
                 try:
-                    resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
-                                                  headers={"Referer": url_s})
+                    resp2 = await self.client.get(skip_url, headers={"Referer": url_s})
                 except httpx.HTTPError as e:
                     return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
                 return await self._analyze(resp2, step + "+skipmax", depth + 1)
