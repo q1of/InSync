@@ -11,7 +11,7 @@ from backend.models import (
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import mark_attendance_parallel
-from backend.services.mirea_client import warm_connection
+from backend.services.mirea_client import is_session_expired, warm_connection
 from backend.database import get_db, opted_out_now, notif_enabled, set_session_invalid
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
                 await bot.send_message(
                     tid, f"ℹ️ <b>Вас не отметили</b>\nВы отключили отметку {where}.",
                     parse_mode="HTML")
-            elif _is_dead_session(r.get("error")):
+            elif is_session_expired(r.get("error")):
                 # Именно слёт сессии — лично сообщаем, что нужно перезайти.
                 await bot.send_message(
                     tid, f"⚠️ <b>Не удалось отметить</b>\nНе вышло отметить вас {where} — "
@@ -55,12 +55,6 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
                     parse_mode="HTML")
         except Exception:
             pass
-
-
-def _is_dead_session(error: str | None) -> bool:
-    """Ошибка именно про слёт сессии (нужен перезаход) — для DM и session_valid=0."""
-    low = (error or "").lower()
-    return any(x in low for x in ("сесси", "войд", "истек", "перезай"))
 
 
 def _is_retriable(success: bool, error: str | None) -> bool:
@@ -123,7 +117,7 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
     # Слёт сессии — сразу помечаем невалидной, чтобы на следующих сканах этого
     # человека не дёргали впустую (и профиль покажет «войти заново»).
     for r in raw_results:
-        if not r.get("success") and not r.get("opted_out") and _is_dead_session(r.get("error")):
+        if not r.get("success") and not r.get("opted_out") and is_session_expired(r.get("error")):
             try:
                 await set_session_invalid(r["telegram_id"])
                 await session_cache.invalidate(r["telegram_id"])

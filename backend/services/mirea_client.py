@@ -39,6 +39,14 @@ SELF_APPROVE_URL = f"{PULSE}/rtu_tc.attendance.api.AttendanceService/SelfApprove
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
 
+# Единственный признак слёта сессии. Текст из ответов Пульса сюда не попадает.
+SESSION_EXPIRED = "Сессия истекла. Войдите заново."
+
+
+def is_session_expired(error: str | None) -> bool:
+    return error == SESSION_EXPIRED
+
+
 # Внутренние (не-cookie) поля, которые нельзя слать как HTTP-cookie
 _INTERNAL = {"access_token", "token_type", "refresh_token", "expires_in"}
 
@@ -330,7 +338,7 @@ class PulseClient:
             return True, None
         if "sso.mirea.ru" in host or "login.mirea.ru" in host or self._bearer():
             # Сессия SSO истекла (или полагаемся на Bearer в gRPC-заголовках)
-            return (True, None) if self._bearer() else (False, "Сессия истекла. Войдите заново.")
+            return (True, None) if self._bearer() else (False, SESSION_EXPIRED)
         return False, "Не удалось получить сессию Пульса"
 
     async def grpc(self, url: str, payload: bytes, timeout: float | None = None) -> tuple[bytes | None, str | None]:
@@ -342,19 +350,23 @@ class PulseClient:
         except httpx.HTTPError as e:
             return None, f"Ошибка сети: {type(e).__name__}"
 
+        if resp.status_code == 401:
+            return None, SESSION_EXPIRED
         if resp.status_code != 200:
             return None, f"Ошибка сервера: {resp.status_code}"
         self._sync_cookies()
 
         msgs, trailers = _parse_grpc_frames(resp.content or b"")
         status = trailers.get("grpc-status")
+        if "16" in (status, resp.headers.get("grpc-status")):   # UNAUTHENTICATED
+            return None, SESSION_EXPIRED
         if status and status != "0":
             return None, trailers.get("grpc-message") or f"gRPC ошибка {status}"
         if not msgs:
             preview = (resp.content[:600] or b"").decode("utf-8", "ignore")
             low = preview.lower()
             if any(x in low for x in ("<html", "<!doctype", "login", "signin", "keycloak", "авториз", "войти")):
-                return None, "Сессия МИРЭА истекла. Войдите заново."
+                return None, SESSION_EXPIRED
             # Настоящий gRPC-ответ всегда несёт grpc-status. Нет статуса и нет
             # сообщения — это НЕ подтверждение (чаще всего слёт сессии/редирект),
             # поэтому НЕ считаем успехом (иначе ложное «отмечен»).
@@ -394,7 +406,7 @@ async def get_me(session_cookies: dict) -> dict:
 
     if raw is None or b"api/auth/login" in (raw or b""):
         return {"valid": False, "cookies": session_cookies,
-                "group_name": None, "error": err or "Сессия истекла"}
+                "group_name": None, "error": err or SESSION_EXPIRED}
 
     strings = _all_strings(raw)
     # ФИО не извлекаем — в UI показываем имя Telegram. Из профиля берём только группу.
@@ -605,7 +617,7 @@ async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str |
     try:
         ok, err = await cli.ensure_cookie()
         if not ok:
-            return False, err or "Сессия истекла"
+            return False, err or SESSION_EXPIRED
         payload = b"\x0a" + _varint(len(token.encode())) + token.encode()
         # Жёсткий тайм-аут: один зависший друг не должен держать волну (QR живёт ~20с).
         raw, err = await cli.grpc(SELF_APPROVE_URL, payload, timeout=9.0)

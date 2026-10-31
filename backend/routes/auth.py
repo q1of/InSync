@@ -11,6 +11,7 @@ from backend.models import (
 )
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services import mirea_service
+from backend.services.mirea_client import is_session_expired
 from backend.services.session_cache import session_cache
 from backend.database import upsert_user, update_session, get_user, clear_session, notif_enabled
 
@@ -163,8 +164,7 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
 
     if not status["valid"]:
         # Отличаем реальный слёт сессии от временного сбоя сети, чтобы не уводить зря.
-        err = (status.get("error") or "").lower()
-        if any(x in err for x in ("сесси", "войд", "истек", "перезай")):
+        if is_session_expired(status.get("error")):
             await clear_session(user.telegram_id)
             await session_cache.invalidate(user.telegram_id)
             _session_check_cache.pop(user.telegram_id, None)

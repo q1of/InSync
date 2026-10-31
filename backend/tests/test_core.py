@@ -15,7 +15,9 @@ from backend.middleware.telegram_auth import TelegramUser
 from backend.models import AttendanceRequest
 from backend.routes import attendance, auth
 from backend.services import mirea_service, pulse_auth
-from backend.services.mirea_client import extract_qr_token, SessionCrypto
+from backend.services.mirea_client import (
+    PulseClient, SESSION_EXPIRED, SessionCrypto, extract_qr_token, is_session_expired,
+)
 from backend.services.pulse_auth import PulseLogin, _otp_challenge
 from backend.routes.attendance import _is_retriable
 
@@ -229,8 +231,54 @@ class TestMarkWithoutSession:
         assert [(r.telegram_id, r.success, r.retriable) for r in res.results] == [(2, False, False)]
 
 
+class TestSessionExpiredDetection:
+    @pytest.mark.parametrize("status,headers,expected", [
+        (401, {}, SESSION_EXPIRED),
+        (200, {"grpc-status": "16"}, SESSION_EXPIRED),
+        (503, {}, "Ошибка сервера: 503"),
+        (403, {}, "Ошибка сервера: 403"),
+    ])
+    def test_grpc_response(self, status, headers, expected):
+        async def run():
+            cli = PulseClient({})
+            cli.client = httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(status, headers=headers)))
+            try:
+                return await cli.grpc("https://pulse.mirea.ru/x", b"")
+            finally:
+                await cli.client.aclose()
+
+        assert asyncio.run(run())[1] == expected
+
+    def test_pulse_text_is_not_treated_as_expired_session(self):
+        assert not is_session_expired("Срок действия QR-кода истек")
+        assert not is_session_expired(None)
+        assert is_session_expired(SESSION_EXPIRED)
+
+
 class TestMorningSessionCheck:
-    @pytest.mark.parametrize("error,dead", [("Ошибка сети: ConnectError", False), ("Сессия истекла", True)])
+    def test_failed_checks_are_retried(self, monkeypatch):
+        calls = []
+
+        async def users():
+            return [{"telegram_id": 1, "encrypted_session": "a"}, {"telegram_id": 2, "encrypted_session": "b"}]
+
+        async def check(tid, _):
+            calls.append(tid)
+            return tid == 2 and calls.count(2) < 2
+
+        real_sleep = asyncio.sleep
+
+        async def no_sleep(_):
+            await real_sleep(0)
+
+        monkeypatch.setattr(app_main, "get_active_session_users", users)
+        monkeypatch.setattr(app_main, "_check_one_session", check)
+        monkeypatch.setattr(app_main.asyncio, "sleep", no_sleep)
+        asyncio.run(app_main._check_all_sessions())
+        assert sorted(calls) == [1, 2, 2]
+
+    @pytest.mark.parametrize("error,dead", [("Ошибка сети: ConnectError", False), (SESSION_EXPIRED, True)])
     def test_only_dead_session_is_invalidated(self, error, dead, monkeypatch):
         invalidated = []
 

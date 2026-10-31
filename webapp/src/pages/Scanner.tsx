@@ -60,7 +60,8 @@ export function Scanner({ active }: Props) {
     if (!active) return;
     getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
     // Проактивно проверяем свою сессию — чтобы перезайти ЗАРАНЕЕ, а не когда уже висит QR.
-    getSessionApi(true).then((s) => setSessionBad(!!s.logged_in && !s.valid)).catch(() => {});
+    // logged_in=false значит слёт; valid=false при logged_in=true — временный сбой, баннер не нужен.
+    getSessionApi(true).then((s) => setSessionBad(!s.logged_in)).catch(() => {});
   }, [active]);
 
   const nativeSupported = () => {

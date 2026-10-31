@@ -71,7 +71,8 @@ export function Profile({ onLogout }: Props) {
           <div class="row" style={{ gap: 7, marginTop: 9 }}>
             <span class={'dot ' + (valid ? 'dot-live' : 'dot-off')} />
             <span class="faint" style={{ fontSize: 12.5 }}>
-              {session == null ? 'Проверяем…' : valid ? 'Сессия активна' : 'Сессия истекла'}
+              {session == null ? 'Проверяем…' : valid ? 'Сессия активна'
+                : session.logged_in ? 'Пульс не отвечает' : 'Сессия истекла'}
             </span>
           </div>
         </div>

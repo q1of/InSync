@@ -20,10 +20,11 @@ from backend.database import (
     get_active_session_users, set_session_invalid, notif_enabled,
 )
 from backend.services import mirea_service
+from backend.services.mirea_client import is_session_expired
 from backend.services.session_cache import session_cache
 from backend.routes.auth import router as auth_router
 from backend.routes.friends import router as friends_router
-from backend.routes.attendance import router as attendance_router, _is_dead_session
+from backend.routes.attendance import router as attendance_router
 from backend.routes.optout import router as optout_router
 from backend.routes.settings import router as settings_router
 
@@ -292,22 +293,25 @@ def _acquire_bot_lock() -> bool:
 _MSK = timezone(timedelta(hours=3))
 
 
-async def _check_one_session(telegram_id: int, encrypted: str) -> None:
-    """Проверка одной сессии: валидную освежаем, мёртвую — гасим и шлём предупреждение."""
+async def _check_one_session(telegram_id: int, encrypted: str) -> bool:
+    """Проверка одной сессии: валидную освежаем, мёртвую — гасим и шлём предупреждение.
+
+    Возвращает True, если проверить не удалось и её нужно повторить.
+    """
     cookies = mirea_service.decrypt_session(encrypted)
     if not cookies:
-        return
+        return False
     status = await mirea_service.check_session(cookies)
     if status.get("valid"):
         new = status.get("cookies")
         if new and new != cookies:
             await update_session(telegram_id, mirea_service.encrypt_session(new))
             await session_cache.set_decrypted(telegram_id, new)
-        return
+        return False
     # Сбой сети или Пульса — это не слёт сессии: не гасим её и не шлём ложное предупреждение.
-    if not _is_dead_session(status.get("error")):
+    if not is_session_expired(status.get("error")):
         logger.warning("Проверка сессии %s не удалась: %s", telegram_id, status.get("error"))
-        return
+        return True
     # Сессия слетела — гасим и предупреждаем ЗАРАНЕЕ, до пар.
     await set_session_invalid(telegram_id)
     await session_cache.invalidate(telegram_id)
@@ -321,23 +325,40 @@ async def _check_one_session(telegram_id: int, encrypted: str) -> None:
             )
         except Exception:
             pass
+    return False
+
+
+_CHECK_ATTEMPTS = 3
+_CHECK_RETRY_DELAY = 300   # 5 минут между кругами, чтобы успеть до первой пары
 
 
 async def _check_all_sessions() -> None:
-    """Проверяет сессии всех пользователей (мягко, по 3 за раз)."""
+    """Проверяет сессии всех пользователей (мягко, по 3 за раз).
+
+    Не проверенных из-за сбоя сети или Пульса проверяем ещё раз.
+    """
     users = await get_active_session_users()
     logger.info("Утренняя проверка сессий: %d шт.", len(users))
     sem = asyncio.Semaphore(3)
 
-    async def _run(row):
+    async def _run(row) -> bool:
         async with sem:
             try:
-                await _check_one_session(row["telegram_id"], row["encrypted_session"])
+                retry = await _check_one_session(row["telegram_id"], row["encrypted_session"])
             except Exception as e:
                 logger.warning("session check failed for %s: %s", row["telegram_id"], e)
+                retry = True
             await asyncio.sleep(0.3)   # не долбим Пульс
+            return retry
 
-    await asyncio.gather(*[_run(r) for r in users])
+    for attempt in range(_CHECK_ATTEMPTS):
+        retries = await asyncio.gather(*[_run(r) for r in users])
+        users = [r for r, retry in zip(users, retries) if retry]
+        if not users or attempt == _CHECK_ATTEMPTS - 1:
+            break
+        await asyncio.sleep(_CHECK_RETRY_DELAY)
+    if users:
+        logger.warning("Утренняя проверка: не удалось проверить %d сессий", len(users))
 
 
 async def _session_watch_loop() -> None:
