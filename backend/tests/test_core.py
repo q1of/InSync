@@ -4,10 +4,15 @@
     venv/Scripts/python -m pytest backend/tests   (Windows)
     venv/bin/python -m pytest backend/tests       (Linux)
 """
+import asyncio
 import base64
 
+import httpx
+import pytest
+
+from backend.services import pulse_auth
 from backend.services.mirea_client import extract_qr_token, SessionCrypto
-from backend.services.pulse_auth import _otp_challenge
+from backend.services.pulse_auth import PulseLogin, _max_skip_url, _otp_challenge
 from backend.routes.attendance import _is_retriable
 
 UUID = "12345678-1234-1234-1234-123456789abc"
@@ -92,3 +97,67 @@ class TestIsRetriable:
         assert _is_retriable(False, "Пара ещё не началась") is True
         assert _is_retriable(False, "Ошибка сети") is True
         assert _is_retriable(False, None) is True
+
+
+MAX_URL = "https://sso.mirea.ru/realms/mirea/login-actions/required-action?execution=max-account-config"
+MAX_PAGE = (
+    '<script>{"pageId": "login-max-otp", "showSkip": true, '
+    '"loginAction": "https://sso.mirea.ru/realms/mirea/login-actions/required-action'
+    '?session_code=S\\u0026execution=max-account-config"}</script>'
+)
+FORM_POST_PAGE = (
+    '<form method="post" action="https://pulse.mirea.ru/api/mireaauth">'
+    '<input type="hidden" name="code" value="c"><input type="hidden" name="state" value="s"></form>'
+)
+
+
+def _login_after_skips(max_shows: int, monkeypatch) -> tuple:
+    """Цепочка из трейсов: страница MAX показывается max_shows раз, затем form_post в Пульс."""
+    posted = []
+
+    async def no_sleep(_):
+        return None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/mireaauth":
+            posted.append(request.content.decode())
+            return httpx.Response(302, headers={
+                "Location": "https://pulse.mirea.ru/services",
+                "Set-Cookie": "Pulse.Auth.Cookie=x; Path=/",
+            })
+        if request.url.path == "/services":
+            return httpx.Response(200, text="ok")
+        handler.shows += 1
+        return httpx.Response(200, text=MAX_PAGE if handler.shows <= max_shows else FORM_POST_PAGE)
+
+    handler.shows = 0
+    monkeypatch.setattr(pulse_auth.asyncio, "sleep", no_sleep)
+
+    async def run():
+        pl = PulseLogin()
+        await pl.client.aclose()
+        pl.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+        try:
+            return await pl._analyze(await pl.client.get(MAX_URL), "code")
+        finally:
+            await pl.close()
+
+    return asyncio.run(run()), posted
+
+
+class TestMaxSkip:
+    @pytest.mark.parametrize("max_shows", [1, 4, 5, 9, 20])
+    def test_form_post_is_submitted_after_any_number_of_skips(self, max_shows, monkeypatch):
+        out, posted = _login_after_skips(max_shows, monkeypatch)
+        assert out.success, out.error
+        assert posted == ["code=c&state=s"]
+
+    def test_stuck_max_page_returns_error_without_token_exchange(self, monkeypatch):
+        out, posted = _login_after_skips(10_000, monkeypatch)
+        assert not out.success
+        assert "MAX" in out.error
+        assert posted == []
+
+    def test_skip_url_is_unescaped(self):
+        html = r'{"a":"https:\/\/sso.mirea.ru\/x?s=A&skip_logout=true","b":"https:\/\/sso.mirea.ru\/x?s=A&skip_logout=false"}'
+        assert _max_skip_url(html, "https://sso.mirea.ru/") == "https://sso.mirea.ru/x?s=A&skip_logout=false"

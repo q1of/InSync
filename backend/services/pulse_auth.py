@@ -290,6 +290,7 @@ class PulseLogin:
         self.client = _make_client()
         self._last_challenge: Challenge | None = None
         self._skip_count = 0   # сколько раз пропускали необязательную настройку (MAX и т.п.)
+        self._form_hops = 0    # сколько авто-форм досабмитили (не зависит от числа пропусков MAX)
 
     async def close(self):
         try:
@@ -315,7 +316,8 @@ class PulseLogin:
         if host != "sso.mirea.ru":
             # Промежуточная страница Пульса с авто-формой (цепочка form_post) — досабмитим.
             form = _auto_submit_form(html, str(resp.url))
-            if form and depth < 4:
+            if form and self._form_hops < 4:
+                self._form_hops += 1
                 action, data = form
                 logger.info("Авто-форма на %s — досабмитим: %s", host, action)
                 try:
@@ -345,10 +347,10 @@ class PulseLogin:
             if self._skip_count < 24:
                 self._skip_count += 1
                 # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
-                # склеиваем из loginAction. Это GET «пропустить настройку MAX, остаться в сессии».
-                # Keycloak у МИРЭА перезапускает сессию (KC_RESTART) и «Skip» срабатывает не сразу,
-                # но в итоге устанавливает KEYCLOAK_IDENTITY. Поэтому жмём упорно, с паузой, пока
-                # страница реально MAX (есть showSkip); как только ушла дальше — выходим из скипа.
+                # склеиваем из loginAction. По трейсам этот шаг завершается не с первого запроса:
+                # после нескольких показов SSO ставит KEYCLOAK_IDENTITY и отдаёт form_post в Пульс.
+                # Почему нужно несколько запросов, пока не выяснено. Повторяем, пока страница
+                # реально MAX (есть showSkip); как только ушла дальше — выходим из скипа.
                 skip_url = _max_skip_url(html, url_s)
                 if not skip_url:
                     action = _kc_login_action(html, url_s)
@@ -364,13 +366,9 @@ class PulseLogin:
                     except httpx.HTTPError as e:
                         return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
                     return await self._analyze(resp2, step + "+skipmax", depth + 1)
-            # Застряли на MAX — НЕ зацикливаемся и НЕ ломаем обмен токена (это и давало auth_error).
-            # Даём понятную инструкцию: разовая настройка на самом Пульсе.
+            # Застряли на MAX — не зацикливаемся и не шлём обмен токена без code.
             logger.warning("Не удалось авто-пропустить MAX за %d попыток", self._skip_count)
-            return LoginOutcome(error=(
-                "МИРЭА просит один раз настроить вход через MAX. Зайдите один раз напрямую на "
-                "pulse.mirea.ru (или в приложении МИРЭА) и пройдите этот экран — после этого "
-                "InSync будет заходить сам."))
+            return LoginOutcome(error="МИРЭА не пропустила шаг настройки MAX. Попробуйте войти ещё раз.")
 
         # Код 2FA один, форма одна — неважно, прислан он на почту или в MAX.
         # Никакого разделения «MAX / не-MAX» нет: это просто форма ввода кода.
@@ -394,7 +392,8 @@ class PulseLogin:
         # response_mode=form_post: SSO вернул авто-сабмит форму в Пульс — досабмитим
         # её сами (иначе .AspNetCore.Cookies не появится и вход «не работает»).
         form = _auto_submit_form(html, url_s)
-        if form and depth < 4:
+        if form and self._form_hops < 4:
+            self._form_hops += 1
             action, data = form
             logger.info("SSO отдал форму-редирект в Пульс (form_post) — досабмитим: %s (поля: %s)",
                         action, ", ".join(data))
