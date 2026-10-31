@@ -340,25 +340,34 @@ class PulseLogin:
         # ушла на callback — тогда скипать нельзя, иначе ломаем обмен кода → auth_error).
         page_now = (_page_id(html) or "").lower()
         is_max_page = page_now.startswith(("login-max-otp", "max-otp")) or ('"showSkip"' in html)
-        if is_max_page and self._skip_count < 8 and depth < 10:
-            self._skip_count += 1
-            # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
-            # склеиваем из loginAction как запас. Это GET «пропустить настройку MAX, остаться в
-            # сессии». У MAX-шага бывает несколько экранов — жмём на каждом свежем показе. ВАЖНО:
-            # ровно один запрос на показ (session_code одноразовый, повтор ломает обмен токена).
-            skip_url = _max_skip_url(html, url_s)
-            if not skip_url:
-                action = _kc_login_action(html, url_s)
-                if action:
-                    sep = "&" if "?" in action else "?"
-                    skip_url = f"{action}{sep}skip_logout=false"
-            if skip_url:
-                logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
-                try:
-                    resp2 = await self.client.get(skip_url, headers={"Referer": url_s})
-                except httpx.HTTPError as e:
-                    return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
-                return await self._analyze(resp2, step + "+skipmax", depth + 1)
+        if is_max_page and depth < 14:
+            if self._skip_count < 10:
+                self._skip_count += 1
+                # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
+                # склеиваем из loginAction. Это GET «пропустить настройку MAX, остаться в сессии».
+                # МИРЭА отдаёт пропуск непредсказуемо (иногда 2-3 запроса, иногда больше), поэтому
+                # жмём на каждом показе, пока страница реально MAX (есть showSkip). Один запрос на
+                # показ — session_code одноразовый.
+                skip_url = _max_skip_url(html, url_s)
+                if not skip_url:
+                    action = _kc_login_action(html, url_s)
+                    if action:
+                        sep = "&" if "?" in action else "?"
+                        skip_url = f"{action}{sep}skip_logout=false"
+                if skip_url:
+                    logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
+                    try:
+                        resp2 = await self.client.get(skip_url, headers={"Referer": url_s})
+                    except httpx.HTTPError as e:
+                        return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
+                    return await self._analyze(resp2, step + "+skipmax", depth + 1)
+            # Застряли на MAX — НЕ зацикливаемся и НЕ ломаем обмен токена (это и давало auth_error).
+            # Даём понятную инструкцию: разовая настройка на самом Пульсе.
+            logger.warning("Не удалось авто-пропустить MAX за %d попыток", self._skip_count)
+            return LoginOutcome(error=(
+                "МИРЭА просит один раз настроить вход через MAX. Зайдите один раз напрямую на "
+                "pulse.mirea.ru (или в приложении МИРЭА) и пройдите этот экран — после этого "
+                "InSync будет заходить сам."))
 
         # Код 2FA один, форма одна — неважно, прислан он на почту или в MAX.
         # Никакого разделения «MAX / не-MAX» нет: это просто форма ввода кода.
