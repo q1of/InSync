@@ -193,6 +193,11 @@ def _auto_submit_form(html: str, base_url: str):
     return None
 
 
+def is_max_skip_page(html: str) -> bool:
+    """Шаг настройки MAX, который разрешено пропустить."""
+    return bool(re.search(r'"showSkip"\s*:\s*true', html))
+
+
 def code_hint(challenge: Challenge) -> str:
     if challenge.kind == "email_code":
         if challenge.masked_email:
@@ -327,7 +332,7 @@ class PulseLogin:
         # разрешает пропуск; без него это обычная форма кода из MAX, её обрабатывает
         # _otp_challenge ниже. URL для опознания не годится: после пропуска в адресе остаётся
         # max-account-config, хотя страница уже ушла на callback.
-        if re.search(r'"showSkip"\s*:\s*true', html) and depth < 60:
+        if is_max_skip_page(html) and depth < 60:
             if self._skip_count < 50:
                 self._skip_count += 1
                 action = _kc_login_action(html, url_s)

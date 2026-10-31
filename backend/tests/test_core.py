@@ -14,7 +14,7 @@ from backend import main as app_main
 from backend.middleware.telegram_auth import TelegramUser
 from backend.models import AttendanceRequest
 from backend.routes import attendance, auth
-from backend.services import mirea_service, pulse_auth
+from backend.services import mirea_client, mirea_service, pulse_auth
 from backend.services.mirea_client import (
     PulseClient, SESSION_EXPIRED, SessionCrypto, extract_qr_token, is_session_expired,
 )
@@ -212,6 +212,16 @@ class TestMaxSkip:
         assert calls == ["GET"]
 
 
+class _no_db:
+    """Заглушка get_db: запись истории в этих тестах не проверяется."""
+
+    async def __aenter__(self):
+        raise RuntimeError("no db")
+
+    async def __aexit__(self, *_):
+        return False
+
+
 class TestMarkWithoutSession:
     def test_friend_without_session_gets_explicit_result(self, monkeypatch):
         async def no_sessions(_):
@@ -254,6 +264,92 @@ class TestSessionExpiredDetection:
         assert not is_session_expired("Срок действия QR-кода истек")
         assert not is_session_expired(None)
         assert is_session_expired(SESSION_EXPIRED)
+
+
+class TestApproveRefresh:
+    QR = "12345678-1234-1234-1234-123456789abc"
+    APPROVED = b"\x00\x00\x00\x00\x02\x12\x00" + b"\x80\x00\x00\x00\x0e" + b"grpc-status:0\r\n"[:14]
+
+    def _handler(self, sso_page: str):
+        calls = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            path, cookie = request.url.path, request.headers.get("cookie", "")
+            calls.append(path)
+            if path.endswith("SelfApproveAttendanceThroughQRCode"):
+                if "Pulse.Auth.Cookie=new" in cookie:
+                    return httpx.Response(200, content=self.APPROVED)
+                return httpx.Response(401)
+            if path == "/api/auth/login":
+                return httpx.Response(302, headers={"Location": "https://sso.mirea.ru/realms/mirea/x"})
+            if path == "/realms/mirea/x":
+                return httpx.Response(200, text=sso_page)
+            if path == "/api/mireaauth":
+                return httpx.Response(302, headers={
+                    "Location": "https://pulse.mirea.ru/services",
+                    "Set-Cookie": "Pulse.Auth.Cookie=new; Path=/",
+                })
+            return httpx.Response(200, text="ok")
+
+        handler.calls = calls
+        return handler
+
+    def _approve(self, handler, cookies, monkeypatch):
+        monkeypatch.setattr(mirea_client, "_pulse_transport", httpx.MockTransport(handler))
+        return asyncio.run(mirea_client.self_approve(cookies, self.QR))
+
+    def test_expired_cookie_is_refreshed_and_mark_retried(self, monkeypatch):
+        handler = self._handler(FORM_POST_PAGE)
+        ok, err, cookies = self._approve(
+            handler, {"Pulse.Auth.Cookie": "old", "KEYCLOAK_IDENTITY": "id"}, monkeypatch)
+        assert (ok, err) == (True, None)
+        assert cookies["Pulse.Auth.Cookie"] == "new"
+        assert cookies["KEYCLOAK_IDENTITY"] == "id"
+        assert handler.calls.count("/api/mireaauth") == 1
+
+    def test_no_identity_means_no_refresh(self, monkeypatch):
+        handler = self._handler(FORM_POST_PAGE)
+        ok, err, cookies = self._approve(handler, {"Pulse.Auth.Cookie": "old"}, monkeypatch)
+        assert (ok, err, cookies) == (False, SESSION_EXPIRED, None)
+        assert "/api/auth/login" not in handler.calls
+
+    def test_dead_identity_stays_expired(self, monkeypatch):
+        handler = self._handler("<html>форма входа</html>")
+        ok, err, cookies = self._approve(
+            handler, {"Pulse.Auth.Cookie": "old", "KEYCLOAK_IDENTITY": "id"}, monkeypatch)
+        assert (ok, err, cookies) == (False, SESSION_EXPIRED, None)
+
+    def test_max_skip_page_is_passed_during_refresh(self, monkeypatch):
+        posted = []
+        base = self._handler(FORM_POST_PAGE)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/realms/mirea/x":
+                return httpx.Response(200, text=MAX_PAGE)
+            if request.url.path.endswith("required-action") and request.method == "POST":
+                posted.append(request.content.decode())
+                return httpx.Response(200, text=FORM_POST_PAGE)
+            return base(request)
+
+        ok, err, _ = self._approve(handler, {"Pulse.Auth.Cookie": "old", "KEYCLOAK_IDENTITY": "id"}, monkeypatch)
+        assert (ok, err, posted) == (True, None, ["skip=true"])
+
+    def test_refreshed_cookies_are_saved(self, monkeypatch):
+        saved = []
+
+        async def save(tid, enc):
+            saved.append(tid)
+
+        async def no_notify(*_):
+            return None
+
+        monkeypatch.setattr(attendance, "update_session", save)
+        monkeypatch.setattr(attendance, "encrypt_session", lambda c: "enc")
+        monkeypatch.setattr(attendance, "_notify_marked_friends", no_notify)
+        monkeypatch.setattr(attendance, "get_db", _no_db)
+        results = [{"telegram_id": 5, "user_name": "Друг", "success": True, "cookies": {"a": "1"}}]
+        asyncio.run(attendance._log_and_notify(TelegramUser(telegram_id=1, display_name="Я"), results, "q", None, None))
+        assert saved == [5]
 
 
 class TestMorningSessionCheck:

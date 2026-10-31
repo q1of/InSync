@@ -10,9 +10,9 @@ from backend.models import (
 )
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
-from backend.services.mirea_service import mark_attendance_parallel
+from backend.services.mirea_service import encrypt_session, mark_attendance_parallel
 from backend.services.mirea_client import is_session_expired, warm_connection
-from backend.database import get_db, opted_out_now, notif_enabled, set_session_invalid
+from backend.database import get_db, opted_out_now, notif_enabled, set_session_invalid, update_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -113,6 +113,15 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
                 await db.commit()
         except Exception as e:
             logger.error("attendance log failed: %s", e)
+
+    # Cookie обновилась при отметке — сохраняем, иначе следующий скан снова потратит на это время.
+    for r in raw_results:
+        if r.get("cookies"):
+            try:
+                await update_session(r["telegram_id"], encrypt_session(r["cookies"]))
+                await session_cache.set_decrypted(r["telegram_id"], r["cookies"])
+            except Exception as e:
+                logger.error("session save failed for %s: %s", r["telegram_id"], e)
 
     # Слёт сессии — сразу помечаем невалидной, чтобы на следующих сканах этого
     # человека не дёргали впустую (и профиль покажет «войти заново»).

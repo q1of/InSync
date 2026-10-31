@@ -175,8 +175,8 @@ async def mark_attendance_parallel(
     """
     async def _one(telegram_id: int, name: str, cookies: dict) -> dict:
         try:
-            ok, err = await self_approve(cookies, qr_data)
-            return {"telegram_id": telegram_id, "user_name": name,
+            ok, err, new_cookies = await self_approve(cookies, qr_data)
+            return {"telegram_id": telegram_id, "user_name": name, "cookies": new_cookies,
                     "success": ok, "error": None if ok else (err or "Не удалось отметить")}
         except Exception as e:
             logger.error("Attendance failed for %s: %s", telegram_id, e)

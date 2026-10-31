@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -24,6 +25,8 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+from backend.services.pulse_auth import _auto_submit_form, _kc_login_action, is_max_skip_page
 
 logger = logging.getLogger(__name__)
 
@@ -330,11 +333,25 @@ class PulseClient:
                 AUTH_LOGIN, params={"redirectUri": "/api/baseinfo"},
                 headers={"Origin": PULSE, "Referer": f"{PULSE}/"},
             )
+            # SSO возвращает результат HTML-формой (form_post) и может показать шаг MAX.
+            for _ in range(4):
+                if any(self.client.cookies.get(n) for n in AUTH_COOKIES):
+                    break
+                html, url = resp.text or "", str(resp.url)
+                form = _auto_submit_form(html, url)
+                action = _kc_login_action(html, url) if is_max_skip_page(html) else None
+                if form:
+                    resp = await self.client.post(form[0], data=form[1], headers={"Referer": url})
+                elif action:
+                    resp = await self.client.post(action, data={"skip": "true"}, headers={"Referer": url})
+                else:
+                    break
         except httpx.HTTPError as e:
             return False, f"МИРЭА не отвечает: {type(e).__name__}"
         host = (httpx.URL(str(resp.url)).host or "").lower()
         if any(self.client.cookies.get(n) for n in AUTH_COOKIES):
             self._sync_cookies()
+            logger.warning("Cookie Пульса обновлена без повторного входа")
             return True, None
         if "sso.mirea.ru" in host or "login.mirea.ru" in host or self._bearer():
             # Сессия SSO истекла (или полагаемся на Bearer в gRPC-заголовках)
@@ -520,7 +537,6 @@ def _parse_lessons(data: bytes) -> list[Lesson]:
 
 async def get_schedule(session_cookies: dict, days: int = 7) -> list[dict]:
     """Расписание на N дней вперёд. Возвращает список пар (dict)."""
-    import asyncio
     from datetime import datetime, timedelta
 
     cli = PulseClient(session_cookies)
@@ -607,18 +623,40 @@ def _parse_selfapprove(data: bytes) -> tuple[bool | None, str | None]:
     return None, None
 
 
-async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str | None]:
-    """Отметка по QR. Возвращает (успех, текст_ошибки)."""
+async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str | None, dict | None]:
+    """Отметка по QR. Возвращает (успех, текст_ошибки, обновлённые_cookies или None).
+
+    Если cookie Пульса протухла, один раз обновляет её по KEYCLOAK_IDENTITY и повторяет.
+    """
     token = extract_qr_token(qr_data)
     if not token:
-        return False, "Не удалось распознать QR-код"
+        return False, "Не удалось распознать QR-код", None
+    payload = b"\x0a" + _varint(len(token.encode())) + token.encode()
 
+    ok, err, cookies = await _approve(session_cookies, payload)
+    if is_session_expired(err) and session_cookies.get("KEYCLOAK_IDENTITY"):
+        fresh = {k: v for k, v in session_cookies.items() if k not in AUTH_COOKIES}
+        ok, err, cookies = await _approve(fresh, payload)
+
+    changed = any(cookies.get(n) and cookies.get(n) != session_cookies.get(n) for n in AUTH_COOKIES)
+    return ok, err, cookies if changed else None
+
+
+async def _approve(session_cookies: dict, payload: bytes) -> tuple[bool, str | None, dict]:
     cli = PulseClient(session_cookies)
+    ok, err = await _approve_once(cli, payload)
+    return ok, err, cli.session_cookies
+
+
+async def _approve_once(cli: PulseClient, payload: bytes) -> tuple[bool, str | None]:
     try:
-        ok, err = await cli.ensure_cookie()
+        try:
+            # Обновление cookie не должно держать всю волну: QR живёт недолго.
+            ok, err = await asyncio.wait_for(cli.ensure_cookie(), timeout=8.0)
+        except asyncio.TimeoutError:
+            return False, "Сервер не отвечает"
         if not ok:
             return False, err or SESSION_EXPIRED
-        payload = b"\x0a" + _varint(len(token.encode())) + token.encode()
         # Жёсткий тайм-аут: один зависший друг не должен держать волну (QR живёт ~20с).
         raw, err = await cli.grpc(SELF_APPROVE_URL, payload, timeout=9.0)
         if err:
