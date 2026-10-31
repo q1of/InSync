@@ -400,6 +400,11 @@ class PulseLogin:
 
     async def submit_code(self, challenge: Challenge, code: str) -> LoginOutcome:
         code = code.strip()
+        # После «Отправить ещё раз» форма кода обновляется (новый session_code в
+        # action_url). Берём самую свежую известную форму, иначе МИРЭА отклонит
+        # верный код как неверный — частая причина «код неправильный» у тех, кто
+        # перезапрашивал код.
+        challenge = self._last_challenge or challenge
         payload = dict(challenge.hidden_fields)
         # Код шлём сразу под всеми распространёнными именами поля: Keycloak возьмёт то,
         # что ждёт его форма, остальные проигнорит. Так работает для любого канала кода.

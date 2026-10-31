@@ -132,8 +132,8 @@ export function Friends({ onPendingChange }: Props) {
       {toast && (
         <div style={{ position: 'fixed', bottom: 'calc(var(--tab-h) + 18px)', left: 20, right: 20, maxWidth: 480, margin: '0 auto',
           padding: '13px 16px', borderRadius: 'var(--r-md)', textAlign: 'center', fontWeight: 600, zIndex: 150,
-          background: toast.ok ? 'var(--live-dim)' : 'var(--miss-dim)', color: toast.ok ? 'var(--live)' : 'var(--miss)',
-          border: '1px solid ' + (toast.ok ? 'rgba(61,232,174,0.4)' : 'rgba(255,91,123,0.4)'), animation: 'enter 0.3s both' }}>
+          background: toast.ok ? 'var(--bg-2)' : 'var(--miss-dim)', color: toast.ok ? 'var(--ink)' : 'var(--miss)',
+          border: '1px solid ' + (toast.ok ? 'var(--hairline-2)' : 'rgba(255,91,123,0.4)'), animation: 'enter 0.3s both' }}>
           {toast.text}
         </div>
       )}

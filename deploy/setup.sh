@@ -4,11 +4,11 @@
 # Прокси НЕ нужен (сервер в РФ, Пульс доступен напрямую).
 #
 # Запуск от root одной командой:
-#   curl -fsSL https://raw.githubusercontent.com/yohjidev/InSync/main/deploy/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/q1of/InSync/main/deploy/setup.sh | bash
 set -euo pipefail
 
 DIR=/opt/insync
-REPO=https://github.com/yohjidev/InSync.git
+REPO=https://github.com/q1of/InSync.git
 say(){ printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { echo "Запусти от root (sudo -i)"; exit 1; }
@@ -48,10 +48,10 @@ if grep -q '^SESSION_KEYS=base64' backend/.env || ! grep -q '^SESSION_KEYS=.\+' 
   KEY="$(python3 -c 'import secrets,base64;print(base64.b64encode(secrets.token_bytes(32)).decode())')"
   sed -i "s|^SESSION_KEYS=.*|SESSION_KEYS=${KEY}|" backend/.env
 fi
-printf 'Домен (направь его на IP этого сервера заранее), напр. innsync.duckdns.org: '; read -r DOMAIN </dev/tty
+printf 'Домен (направь его на IP этого сервера заранее), напр. insynbot.space: '; read -r DOMAIN </dev/tty
 if printf '%s' "${DOMAIN:-}" | grep -qE '^[0-9.]+$'; then
   echo "❌ Это IP, а не домен. Для HTTPS нужен ДОМЕН, указывающий на этот сервер"
-  echo "   (напр. innsync.duckdns.org -> IP сервера). По IP Let's Encrypt сертификат не выдаст."
+  echo "   (напр. insynbot.space -> IP сервера). По IP Let's Encrypt сертификат не выдаст."
   exit 1
 fi
 sed -i "s|^WEBAPP_URL=.*|WEBAPP_URL=https://${DOMAIN}|" backend/.env
