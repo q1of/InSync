@@ -76,6 +76,10 @@ export function Friends({ onPendingChange }: Props) {
             <button class="btn" type="submit" style={{ width: 54, flex: 'none', padding: 0, height: 54 }} aria-label="Добавить"><IconPlus size={22} /></button>
           </form>
 
+          {friends.length > 0 && (
+            <div class="muted" style={{ fontSize: 13, marginBottom: 12 }}>Кого отмечаем на паре</div>
+          )}
+
           {loading ? <Loader /> : friends.length === 0 ? (
             <Empty icon={<IconUsers size={44} color="var(--ink-faint)" />} title="Пока никого" sub="Добавь друга по его @username" />
           ) : (
