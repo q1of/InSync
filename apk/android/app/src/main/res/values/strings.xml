@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">InSync</string>
-    <string name="title_activity_main">InSync</string>
-    <string name="package_name">ru.insync.app</string>
-    <string name="custom_url_scheme">ru.insync.app</string>
-</resources>

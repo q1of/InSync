@@ -4,22 +4,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Node / сборка фронтенда (обе версии)
+# Node / сборка miniapp
 miniapp/node_modules/
 miniapp/dist/
 miniapp/.vite/
-apk/node_modules/
-apk/dist/
-apk/.vite/
-
-# Android (Capacitor) — генерируемое и машинно-зависимое
-apk/android/.gradle/
-apk/android/build/
-apk/android/app/build/
-apk/android/capacitor-cordova-android-plugins/build/
-apk/android/local.properties
-apk/android/.idea/
-apk/android/captures/
 
 # Секреты
 backend/.env

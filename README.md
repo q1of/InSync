@@ -3,8 +3,9 @@
 Автоотметка посещаемости для студентов МИРЭА — за себя и друзей одним сканом QR.
 Две версии от одного бэкенда:
 
-- **Mini App** — Telegram Mini App (`miniapp/`);
-- **APK** — Android-приложение (`apk/`, Capacitor).
+- **Mini App** — Telegram Mini App (`miniapp/`, этот репозиторий);
+- **Android-приложение** — отдельный репозиторий **InSync-app** (Capacitor); использует
+  этот же бэкенд.
 
 Главный идентификатор — **аккаунт Пульса МИРЭА**: один человек = один аккаунт в обеих
 версиях (друзья, история, настройки общие). Telegram — лишь привязка к аккаунту Пульса.
@@ -58,20 +59,15 @@ InSync/
 │  │  └─ ...
 │  └─ package.json
 │
-├─ apk/                      # Android-приложение (Capacitor) — своя копия фронтенда
-│  ├─ src/                   #   тот же интерфейс, что и в miniapp
-│  ├─ capacitor.config.ts    #   appId, webDir=dist
-│  ├─ android/               #   нативный Android-проект (Gradle)
-│  └─ package.json           #   + @capacitor/*; скрипты app:sync / app:open / app:apk
-│
 ├─ deploy/setup.sh           # установка сервера одной командой (Caddy + systemd, раздаёт miniapp)
 ├─ data/                     # локальные данные (БД, lock) — в .gitignore
 └─ .gitignore
 ```
 
-> Фронтенд у `miniapp` и `apk` — две независимые копии (по запросу). Интерфейс один и тот
-> же; код определяет среду в рантайме (`src/env.ts`): в Telegram — вход по initData и API на
-> том же домене, в приложении — вход по токену и API по абсолютному адресу бэкенда.
+> **Android-приложение — в отдельном репозитории `InSync-app`** (Capacitor). Оно использует
+> этот же бэкенд: вход по логину Пульса создаёт/находит тот же аккаунт (общий с Mini App).
+> Правки в приложении не затрагивают Mini App; общий — только бэкенд, и изменения в нём
+> делаются обратно-совместимо.
 
 ---
 
@@ -135,22 +131,10 @@ https-адрес ngrok впишите в `backend/.env` → `WEBAPP_URL` и в *
 
 ---
 
-## Сборка APK (Android)
+## Android-приложение
 
-Нужны: **JDK 17–21** (Gradle 8.11 не поддерживает JDK 25) и **Android SDK** (platform-tools,
-`platforms;android-35`, `build-tools;35.0.0`).
-
-```bash
-cd apk
-npm install
-# адрес бэкенда для приложения (по умолчанию зашит в apk/src/env.ts):
-#   VITE_API_BASE=https://<ваш-домен>/api  — при необходимости переопределить
-npm run app:apk        # сборка фронта + cap sync + gradle assembleDebug (Windows)
-```
-
-Готовый файл: `apk/android/app/build/outputs/apk/debug/app-debug.apk`.
-
-Открыть проект в Android Studio: `npm run app:open`.
+Живёт в отдельном репозитории **InSync-app** (Capacitor). Сборка APK, настройка SDK и
+адрес бэкенда описаны в его README. Приложение работает с этим же бэкендом.
 
 ---
 
