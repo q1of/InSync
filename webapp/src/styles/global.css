@@ -284,7 +284,7 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 
 /* компактный тумблер (расписание) — настоящий размер, без transform-scale */
 .toggle.sm { width: 34px; height: 20px; }
-.toggle.sm::after { width: 16px; height: 16px; }
+.toggle.sm::after { width: 16px; height: 16px; top: 1px; }   /* центр по вертикали для высоты 20px */
 .toggle.sm[data-on="true"]::after { transform: translateX(14px); }
 
 /* ---------- сегмент ---------- */
