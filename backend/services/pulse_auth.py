@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import html as html_mod
 import json
 import logging
@@ -340,14 +341,14 @@ class PulseLogin:
         # ушла на callback — тогда скипать нельзя, иначе ломаем обмен кода → auth_error).
         page_now = (_page_id(html) or "").lower()
         is_max_page = page_now.startswith(("login-max-otp", "max-otp")) or ('"showSkip"' in html)
-        if is_max_page and depth < 14:
-            if self._skip_count < 10:
+        if is_max_page and depth < 28:
+            if self._skip_count < 24:
                 self._skip_count += 1
                 # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
                 # склеиваем из loginAction. Это GET «пропустить настройку MAX, остаться в сессии».
-                # МИРЭА отдаёт пропуск непредсказуемо (иногда 2-3 запроса, иногда больше), поэтому
-                # жмём на каждом показе, пока страница реально MAX (есть showSkip). Один запрос на
-                # показ — session_code одноразовый.
+                # Keycloak у МИРЭА перезапускает сессию (KC_RESTART) и «Skip» срабатывает не сразу,
+                # но в итоге устанавливает KEYCLOAK_IDENTITY. Поэтому жмём упорно, с паузой, пока
+                # страница реально MAX (есть showSkip); как только ушла дальше — выходим из скипа.
                 skip_url = _max_skip_url(html, url_s)
                 if not skip_url:
                     action = _kc_login_action(html, url_s)
@@ -356,6 +357,8 @@ class PulseLogin:
                         skip_url = f"{action}{sep}skip_logout=false"
                 if skip_url:
                     logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
+                    if self._skip_count > 1:
+                        await asyncio.sleep(0.25)   # даём Keycloak установить сессию между заходами
                     try:
                         resp2 = await self.client.get(skip_url, headers={"Referer": url_s})
                     except httpx.HTTPError as e:
