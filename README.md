@@ -103,7 +103,7 @@ python -c "import secrets,base64;print(base64.b64encode(secrets.token_bytes(32))
 с HTTPS, собирает `miniapp` в статику, поднимает backend как systemd-сервис):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yohjidev/InSync/main/deploy/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/q1of/InSync/main/deploy/setup.sh | bash
 ```
 
 **Обновление после `git push`:**
