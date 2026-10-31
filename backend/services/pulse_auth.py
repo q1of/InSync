@@ -20,7 +20,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import html as html_mod
 import json
 import logging
@@ -194,17 +193,6 @@ def _auto_submit_form(html: str, base_url: str):
     return None
 
 
-def _max_skip_url(html: str, base_url: str) -> str | None:
-    """Точный URL «Skip» со страницы настройки MAX (…&skip_logout=false) из kcContext.
-
-    У МИРЭА на этой странице kcContext содержит готовую ссылку «пропустить и остаться
-    в сессии» (skip_logout=false) с полным client_data. Берём её как есть — надёжнее,
-    чем склеивать из loginAction (у некоторых client_data ломает ручную склейку).
-    """
-    m = re.search(r'"((?:https?:|/)[^"]*?skip_logout=false)"', html)
-    return urljoin(base_url, _unescape(m.group(1))) if m else None
-
-
 def code_hint(challenge: Challenge) -> str:
     if challenge.kind == "email_code":
         if challenge.masked_email:
@@ -334,10 +322,9 @@ class PulseLogin:
 
         url_s = str(resp.url)
 
-        # МИРЭА после ВЕРНОГО 2FA-кода иногда форсит настройку MAX (required action
-        # execution=max-account-config, страница login-max-otp / max-otp.ftl). Это НЕ
-        # ввод кода — у формы есть «Skip» (skip_logout=false). Если не пропустить, вход
-        # застревает, а пользователь видит ложное «Неверный код». Жмём «Skip» за него.
+        # МИРЭА после ВЕРНОГО 2FA-кода иногда показывает настройку MAX (required action
+        # execution=max-account-config, страница login-max-otp). Это НЕ ввод кода: без
+        # обработки пользователь видит ложное «Неверный код».
         # MAX-страницу опознаём по её РОДНОМУ маркеру "showSkip" (а не по куску URL:
         # после пропуска МИРЭА оставляет max-account-config в адресе, но страница уже
         # ушла на callback — тогда скипать нельзя, иначе ломаем обмен кода → auth_error).
@@ -346,23 +333,18 @@ class PulseLogin:
         if is_max_page and depth < 60:
             if self._skip_count < 50:
                 self._skip_count += 1
-                # Берём ТОЧНУЮ ссылку «Skip» (skip_logout=false) из kcContext; если вдруг не нашли —
-                # склеиваем из loginAction. По трейсам этот шаг завершается не с первого запроса:
-                # после нескольких показов SSO ставит KEYCLOAK_IDENTITY и отдаёт form_post в Пульс.
-                # Почему нужно несколько запросов, пока не выяснено. Повторяем, пока страница
-                # реально MAX (есть showSkip); как только ушла дальше — выходим из скипа.
-                skip_url = _max_skip_url(html, url_s)
-                if not skip_url:
-                    action = _kc_login_action(html, url_s)
-                    if action:
-                        sep = "&" if "?" in action else "?"
-                        skip_url = f"{action}{sep}skip_logout=false"
-                if skip_url:
-                    logger.warning("Пропускаем настройку MAX (попытка %d)", self._skip_count)
-                    if self._skip_count > 1:
-                        await asyncio.sleep(0.25)   # даём Keycloak установить сессию между заходами
+                # Это НЕ настоящая кнопка «Skip», а повторная загрузка страницы: skip_logout —
+                # параметр рестарта Keycloak (loginRestartFlowUrl), а как работает сам Skip, пока
+                # не выяснено. По трейсам после случайного числа загрузок (3, 9, 22, иногда >24)
+                # SSO сам ставит KEYCLOAK_IDENTITY и отдаёт form_post в Пульс. URL оставлен тем же,
+                # что дал этот результат. Выходим, как только страница перестала быть MAX.
+                action = _kc_login_action(html, url_s)
+                if action:
+                    sep = "&" if "?" in action else "?"
+                    logger.warning("Перезагружаем страницу MAX (попытка %d)", self._skip_count)
                     try:
-                        resp2 = await self.client.get(skip_url, headers={"Referer": url_s})
+                        resp2 = await self.client.get(f"{action}{sep}skip_logout=false",
+                                                      headers={"Referer": url_s})
                     except httpx.HTTPError as e:
                         return LoginOutcome(error=f"МИРЭА не ответила при пропуске настройки MAX ({type(e).__name__})")
                     return await self._analyze(resp2, step + "+skipmax", depth + 1)
