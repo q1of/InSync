@@ -109,12 +109,23 @@ async def start_cmd(message: types.Message, state: FSMContext):
             reply_markup=kb,
         )
     else:
+        # Кнопка открытия Mini App — показываем ВСЕМ, даже не залогиненным:
+        # новый пользователь нажимает её и входит через Пульс прямо в приложении.
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Открыть InSync",
+                web_app=WebAppInfo(url=settings.webapp_url),
+            )]
+        ])
         await message.answer(
             "InSync — Для студентов МИРЭА\n\n"
             "• Отметка по QR-коду\n"
             "• Отметка за себя и друзей\n"
-            "• Без очередей и зависаний"
+            "• Без очередей и зависаний\n\n"
+            "Нажми «Открыть InSync» и войди через Пульс прямо в приложении.",
+            reply_markup=kb,
         )
+        # Вход логином в чат оставляем запасным путём (если кто-то напишет логин текстом).
         await state.set_state(AuthState.waiting_for_login)
 
 @dp.message(AuthState.waiting_for_login)
