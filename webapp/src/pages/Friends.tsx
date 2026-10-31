@@ -56,8 +56,6 @@ export function Friends({ onPendingChange }: Props) {
     catch { setFriends((arr) => arr.map((x) => x.telegram_id === f.telegram_id ? { ...x, marking_enabled: !next } : x)); }
   };
 
-  const markedCount = friends.filter((f) => f.marking_enabled).length;
-
   return (
     <div class="screen screen-pad-top">
       <h1 style={{ fontSize: 30, marginBottom: 22 }}>Друзья</h1>
@@ -77,15 +75,6 @@ export function Friends({ onPendingChange }: Props) {
               onInput={(e) => setAddId((e.target as HTMLInputElement).value)} />
             <button class="btn" type="submit" style={{ width: 54, flex: 'none', padding: 0, height: 54 }} aria-label="Добавить"><IconPlus size={22} /></button>
           </form>
-
-          {markedCount > 0 && (
-            <div class="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-              <span class="muted" style={{ fontSize: 13 }}>Отмечаем на паре</span>
-              <span class="pill" style={{ padding: '4px 10px', fontSize: 12 }}>
-                <span class="dot dot-live" />{markedCount} из {friends.length}
-              </span>
-            </div>
-          )}
 
           {loading ? <Loader /> : friends.length === 0 ? (
             <Empty icon={<IconUsers size={44} color="var(--ink-faint)" />} title="Пока никого" sub="Добавь друга по его @username" />
