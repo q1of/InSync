@@ -114,6 +114,8 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id, status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_initiator ON attendance_log(initiator, scan_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_optout_user ON lesson_optout(telegram_id, start_epoch)")
+        # Поиск аккаунта по логину Пульса — основа общего аккаунта для TG и Android.
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_mirea_login ON users(mirea_login)")
 
         await db.commit()
 
@@ -269,6 +271,102 @@ async def set_session_invalid(telegram_id: int) -> None:
     он восстановится по KEYCLOAK_IDENTITY при следующем явном входе."""
     async with get_db() as db:
         await db.execute("UPDATE users SET session_valid = 0 WHERE telegram_id = ?", (telegram_id,))
+        await db.commit()
+
+
+# ───────────────────────── Общий аккаунт (TG + Android) ─────────────────────────
+#
+# Идентификатор аккаунта — логин Пульса МИРЭА. В одной записи users:
+#   telegram_id > 0  — настоящий Telegram id (есть привязка к боту);
+#   telegram_id < 0  — синтетический id аккаунта, заведённого только в приложении
+#                      (Telegram ещё не привязан). Так Android-пользователь без
+#                      Telegram тоже помещается в ту же таблицу и те же связи.
+# При входе в Пульс (из бота ИЛИ из приложения) аккаунт ищется по mirea_login,
+# поэтому один человек = один аккаунт в обеих версиях.
+
+
+async def get_user_by_login(mirea_login: str) -> Optional[aiosqlite.Row]:
+    """Аккаунт по логину Пульса (основной идентификатор). None — если не найден."""
+    if not mirea_login:
+        return None
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM users WHERE mirea_login = ? ORDER BY telegram_id DESC LIMIT 1",
+            (mirea_login,),
+        ) as cur:
+            return await cur.fetchone()
+
+
+async def _alloc_app_account_id(db) -> int:
+    """Свободный отрицательный id для аккаунта без Telegram (чтобы не пересекался
+    с настоящими Telegram id, которые положительны)."""
+    async with db.execute("SELECT MIN(telegram_id) AS m FROM users") as cur:
+        row = await cur.fetchone()
+    m = row["m"] if row else None
+    return (m - 1) if (m is not None and m < 0) else -1
+
+
+async def get_or_create_app_account(
+    mirea_login: str, display_name: Optional[str] = None, group_name: Optional[str] = None
+) -> int:
+    """id аккаунта для входа из приложения. Если человек уже входил через бота —
+    вернётся его существующий аккаунт (общий), иначе заведётся новый (отрицательный id)."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT telegram_id FROM users WHERE mirea_login = ? ORDER BY telegram_id DESC LIMIT 1",
+            (mirea_login,),
+        ) as cur:
+            row = await cur.fetchone()
+        if row:
+            if group_name:
+                await db.execute(
+                    "UPDATE users SET group_name = ? WHERE telegram_id = ?",
+                    (group_name, row["telegram_id"]),
+                )
+                await db.commit()
+            return row["telegram_id"]
+
+        new_id = await _alloc_app_account_id(db)
+        await db.execute(
+            "INSERT INTO users (telegram_id, display_name, mirea_login, group_name) "
+            "VALUES (?, ?, ?, ?)",
+            (new_id, display_name or mirea_login, mirea_login, group_name),
+        )
+        await db.commit()
+        return new_id
+
+
+async def merge_app_account_into_telegram(mirea_login: str, telegram_id: int) -> None:
+    """Человек сначала завёл аккаунт в приложении (отрицательный id), потом вошёл
+    через бота этим же логином Пульса — переносим его друзей/историю/пары на
+    настоящий Telegram id и удаляем временную запись. Общий аккаунт сохраняется."""
+    if not mirea_login or telegram_id < 0:
+        return
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT telegram_id FROM users WHERE mirea_login = ? AND telegram_id < 0",
+            (mirea_login,),
+        ) as cur:
+            rows = await cur.fetchall()
+        src_ids = [r["telegram_id"] for r in rows if r["telegram_id"] != telegram_id]
+        if not src_ids:
+            return
+        # Цель должна существовать до переноса связей.
+        await db.execute(
+            "INSERT OR IGNORE INTO users (telegram_id, display_name, mirea_login) VALUES (?, ?, ?)",
+            (telegram_id, mirea_login, mirea_login),
+        )
+        for src in src_ids:
+            # OR IGNORE гасит конфликты уникальности (общий друг / одна и та же пара),
+            # остатки по src затем удаляем.
+            await db.execute("UPDATE OR IGNORE friendships SET user_id = ? WHERE user_id = ?", (telegram_id, src))
+            await db.execute("UPDATE OR IGNORE friendships SET friend_id = ? WHERE friend_id = ?", (telegram_id, src))
+            await db.execute("DELETE FROM friendships WHERE user_id = ? OR friend_id = ?", (src, src))
+            await db.execute("UPDATE attendance_log SET initiator = ? WHERE initiator = ?", (telegram_id, src))
+            await db.execute("UPDATE attendance_log SET target_user = ? WHERE target_user = ?", (telegram_id, src))
+            await db.execute("UPDATE OR IGNORE lesson_optout SET telegram_id = ? WHERE telegram_id = ?", (telegram_id, src))
+            await db.execute("DELETE FROM lesson_optout WHERE telegram_id = ?", (src,))
+            await db.execute("DELETE FROM users WHERE telegram_id = ?", (src,))
         await db.commit()
 
 

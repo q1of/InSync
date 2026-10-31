@@ -18,10 +18,12 @@ from backend.config import settings
 from backend.database import (
     init_db, get_user, upsert_user, update_session,
     get_active_session_users, set_session_invalid, notif_enabled,
+    merge_app_account_into_telegram,
 )
 from backend.services import mirea_service
 from backend.services.session_cache import session_cache
 from backend.routes.auth import router as auth_router
+from backend.routes.app_auth import router as app_auth_router
 from backend.routes.friends import router as friends_router
 from backend.routes.attendance import router as attendance_router
 from backend.routes.optout import router as optout_router
@@ -154,6 +156,8 @@ async def process_password(message: types.Message, state: FSMContext):
     tokens = result["tokens"]
     encrypted = mirea_service.encrypt_session(tokens)
 
+    # Если этим логином уже заводили аккаунт в приложении — переносим его на Telegram id.
+    await merge_app_account_into_telegram(login, message.from_user.id)
     await upsert_user(
         telegram_id=message.from_user.id,
         display_name=message.from_user.username or message.from_user.first_name,
@@ -201,10 +205,13 @@ async def process_2fa(message: types.Message, state: FSMContext):
     tokens = result["tokens"]
     encrypted = mirea_service.encrypt_session(tokens)
 
+    login = data.get("login")
+    if login:
+        await merge_app_account_into_telegram(login, message.from_user.id)
     await upsert_user(
         telegram_id=message.from_user.id,
         display_name=message.from_user.username or message.from_user.first_name,
-        mirea_login=data.get("login"),
+        mirea_login=login,
         group_name=result.get("group_name"),
         username=message.from_user.username,
     )
@@ -296,7 +303,7 @@ async def _check_one_session(telegram_id: int, encrypted: str) -> None:
     # Сессия слетела — гасим и предупреждаем ЗАРАНЕЕ, до пар.
     await set_session_invalid(telegram_id)
     await session_cache.invalidate(telegram_id)
-    if bot and await notif_enabled(telegram_id, "session"):
+    if bot and telegram_id > 0 and await notif_enabled(telegram_id, "session"):
         try:
             await bot.send_message(
                 telegram_id,
@@ -388,15 +395,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Android-приложение (Capacitor) шлёт запросы с origin localhost / capacitor://localhost.
+# Авторизация у нас в заголовках (initData или Bearer-токен), не в cookie, поэтому
+# добавить эти origin безопасно.
+_cors_origins = [settings.webapp_url] if settings.webapp_url else ["*"]
+if settings.webapp_url:
+    _cors_origins += ["https://localhost", "http://localhost", "capacitor://localhost"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.webapp_url] if settings.webapp_url else ["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth_router)
+app.include_router(app_auth_router)
 app.include_router(friends_router)
 app.include_router(attendance_router)
 app.include_router(optout_router)

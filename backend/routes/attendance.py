@@ -36,6 +36,8 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
         tid = r["telegram_id"]
         if tid == user.telegram_id:
             continue  # себе не шлём
+        if tid <= 0:
+            continue  # аккаунт без Telegram (только приложение) — пуш придёт через FCM
         if not await notif_enabled(tid, "marked"):
             continue
         try:

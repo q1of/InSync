@@ -6,9 +6,12 @@
 """
 import base64
 
+import pytest
+
 from backend.services.mirea_client import extract_qr_token, SessionCrypto
 from backend.services.pulse_auth import _otp_challenge
 from backend.routes.attendance import _is_retriable
+from backend.services.app_token import make_app_token, verify_app_token
 
 UUID = "12345678-1234-1234-1234-123456789abc"
 
@@ -92,3 +95,20 @@ class TestIsRetriable:
         assert _is_retriable(False, "Пара ещё не началась") is True
         assert _is_retriable(False, "Ошибка сети") is True
         assert _is_retriable(False, None) is True
+
+
+class TestAppToken:
+    def test_roundtrip(self):
+        for aid in (123456789, -1, -42):
+            assert verify_app_token(make_app_token(aid)) == aid
+
+    def test_tampered_signature_rejected(self):
+        tok = make_app_token(777)
+        body, _sig = tok.split(".", 1)
+        with pytest.raises(ValueError):
+            verify_app_token(f"{body}.deadbeef")
+
+    def test_garbage_rejected(self):
+        for bad in ("", "no-dot", "a.b.c.d"):
+            with pytest.raises(ValueError):
+                verify_app_token(bad)

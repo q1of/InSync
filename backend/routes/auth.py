@@ -12,7 +12,10 @@ from backend.models import (
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services import mirea_service
 from backend.services.session_cache import session_cache
-from backend.database import upsert_user, update_session, get_user, clear_session, notif_enabled
+from backend.database import (
+    upsert_user, update_session, get_user, clear_session, notif_enabled,
+    merge_app_account_into_telegram,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -29,6 +32,9 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
     tokens = result["tokens"]
     encrypted = mirea_service.encrypt_session(tokens)
 
+    # Если этим логином уже заводили аккаунт в приложении — переносим на Telegram id.
+    if mirea_login:
+        await merge_app_account_into_telegram(mirea_login, user.telegram_id)
     await upsert_user(
         telegram_id=user.telegram_id,
         display_name=user.display_name,
@@ -168,7 +174,7 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
             await session_cache.invalidate(user.telegram_id)
             _session_check_cache.pop(user.telegram_id, None)
             from backend.main import bot
-            if bot and await notif_enabled(user.telegram_id, "session"):
+            if bot and user.telegram_id > 0 and await notif_enabled(user.telegram_id, "session"):
                 try:
                     await bot.send_message(
                         user.telegram_id,

@@ -7,6 +7,8 @@ from fastapi import HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from backend.config import settings
+from backend.services.app_token import verify_app_token
+from backend.database import get_user
 
 class TelegramUser(BaseModel):
     telegram_id: int
@@ -40,17 +42,33 @@ def verify_init_data(init_data: str) -> dict:
     user_data = json.loads(parsed_data.get('user', '{}'))
     return user_data
 
+async def _user_from_app_token(token: str) -> TelegramUser:
+    """Опознаёт пользователя Android-приложения по его токену."""
+    try:
+        account_id = verify_app_token(token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    row = await get_user(account_id)
+    if not row:
+        raise HTTPException(status_code=401, detail="Аккаунт не найден")
+    display_name = row["display_name"] or str(account_id)
+    return TelegramUser(telegram_id=account_id, display_name=display_name, username=row["username"])
+
+
 async def get_current_user(
     x_telegram_init_data: str = Security(init_data_header),
     authorization: str = Security(authorization_header)
 ) -> TelegramUser:
     init_data = x_telegram_init_data
+    # Android-приложение присылает свой токен: "Authorization: Bearer <token>".
+    if authorization and authorization.startswith("Bearer "):
+        return await _user_from_app_token(authorization[7:])
     if not init_data and authorization and authorization.startswith("tma "):
         init_data = authorization[4:]
-        
+
     if not init_data:
         raise HTTPException(status_code=401, detail="Missing Telegram init data")
-        
+
     try:
         user_data = verify_init_data(init_data)
         telegram_id = user_data.get('id')

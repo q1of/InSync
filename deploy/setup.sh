@@ -61,9 +61,9 @@ python3 -m venv venv
 venv/bin/pip install --upgrade pip >/dev/null
 venv/bin/pip install -r backend/requirements.txt
 
-say "Сборка webapp в статику (пара минут, терпим на слабой машине)"
-( cd webapp && npm ci && npm run build )
-rm -rf /var/www/insync && mkdir -p /var/www/insync && cp -r webapp/dist/* /var/www/insync/
+say "Сборка miniapp в статику (пара минут, терпим на слабой машине)"
+( cd miniapp && npm ci && npm run build )
+rm -rf /var/www/insync && mkdir -p /var/www/insync && cp -r miniapp/dist/* /var/www/insync/
 
 say "Caddy: статика + /api -> backend + HTTPS на ${DOMAIN}"
 cat >/etc/caddy/Caddyfile <<EOF

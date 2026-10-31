@@ -1,3 +1,5 @@
+import { authMode, API_BASE, getToken, setToken, clearToken } from '../env';
+
 const getInitData = (): string => {
   if (typeof window === 'undefined') return '';
   // 1) штатно — из SDK Telegram
@@ -18,16 +20,17 @@ const getInitData = (): string => {
   return '';
 };
 
-const BASE_URL = '/api';
-
 async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-  const initData = getInitData();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Telegram-Init-Data': initData,
-  };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authMode === 'app') {
+    // Android / веб вне Telegram — свой токен, выданный после входа в Пульс.
+    const t = getToken();
+    if (t) headers['Authorization'] = `Bearer ${t}`;
+  } else {
+    headers['X-Telegram-Init-Data'] = getInitData();
+  }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -45,15 +48,31 @@ async function api<T = any>(method: string, path: string, body?: unknown): Promi
   return response.json();
 }
 
-// Auth
-export const loginApi = (username: string, password: string) =>
-  api('POST', '/auth/login', { username, password });
+// Auth. В режиме приложения вход идёт через /app/* и возвращает токен,
+// который мы сохраняем; в Telegram — как раньше, через /auth/*.
+export const loginApi = async (username: string, password: string) => {
+  if (authMode === 'app') {
+    const r = await api<any>('POST', '/app/login', { username, password });
+    if (r?.token) setToken(r.token);
+    return r;
+  }
+  return api('POST', '/auth/login', { username, password });
+};
 
-export const complete2faApi = (challengeId: string, code: string) =>
-  api('POST', '/auth/2fa', { challenge_id: challengeId, code });
+export const complete2faApi = async (challengeId: string, code: string) => {
+  if (authMode === 'app') {
+    const r = await api<any>('POST', '/app/2fa', { challenge_id: challengeId, code });
+    if (r?.token) setToken(r.token);
+    return r;
+  }
+  return api('POST', '/auth/2fa', { challenge_id: challengeId, code });
+};
 
 export const resend2faApi = (challengeId: string) =>
-  api<{ success: boolean; hint?: string }>('POST', '/auth/2fa/resend', { challenge_id: challengeId });
+  api<{ success: boolean; hint?: string }>(
+    'POST', authMode === 'app' ? '/app/2fa/resend' : '/auth/2fa/resend',
+    { challenge_id: challengeId },
+  );
 
 export interface SessionStatus {
   logged_in: boolean;
@@ -82,8 +101,13 @@ export const getOptoutsApi = () =>
 export const setOptoutApi = (body: { start_epoch: number; end_epoch: number | null; lesson_name: string; enabled: boolean }) =>
   api<{ success: boolean }>('POST', '/optouts', body);
 
-export const logoutApi = () =>
-  api('POST', '/auth/logout');
+export const logoutApi = async () => {
+  try {
+    await api('POST', '/auth/logout');
+  } finally {
+    if (authMode === 'app') clearToken();   // в приложении забываем токен → вернёт на вход
+  }
+};
 
 // Настройки уведомлений
 export interface NotifPrefs { marked: boolean; login: boolean; session: boolean; }
