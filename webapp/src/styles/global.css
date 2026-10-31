@@ -131,7 +131,6 @@ h1, h2, h3, .display {
 
 .btn-ghost { background: transparent; border: 1px solid var(--hairline-2); color: var(--ink); box-shadow: none; }
 .btn-danger { background: transparent; border: 1px solid var(--hairline-2); color: var(--ink-dim); box-shadow: none; }
-.btn-sm { width: auto; padding: 10px 16px; font-size: 14px; border-radius: var(--r-sm); }
 
 /* ---------- поля ---------- */
 .field {
@@ -246,26 +245,6 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 /* Прячем собственную рамку-уголки html5-qrcode (ПК) — рисуем свою scan-corner */
 #qr-reader #qr-shaded-region { display: none !important; }
 
-/* ---------- модалка результата ---------- */
-.sheet-backdrop {
-  position: fixed; inset: 0; z-index: 200;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  display: flex; align-items: flex-end; justify-content: center;
-  animation: fade 0.25s ease both;
-}
-.sheet {
-  width: 100%; max-width: 520px;
-  background: var(--bg-2);
-  border: 1px solid var(--hairline); border-bottom: none;
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-  padding: 10px 20px calc(24px + env(safe-area-inset-bottom));
-  animation: sheet-up 0.38s cubic-bezier(0.2, 0.9, 0.2, 1) both;
-}
-.sheet-grab { width: 42px; height: 4px; border-radius: 4px; background: var(--hairline-2); margin: 6px auto 16px; }
-@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
-
 /* ---------- toggle «отмечать» ---------- */
 .toggle {
   width: 46px; height: 28px; border-radius: 999px;
@@ -318,17 +297,6 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 ::-moz-selection { background: rgba(170, 172, 182, 0.30); color: var(--ink); }
 
 /* ---------- hero сканера ---------- */
-.hero-stage { position: relative; height: 196px; display: grid; place-items: center; }
-.hero-tile {
-  position: relative; width: 94px; height: 94px; border-radius: 26px;
-  display: grid; place-items: center; overflow: hidden; color: var(--ink);
-  background: linear-gradient(158deg, #1c1c21, #0b0b0e);
-  border: 1px solid var(--hairline-2);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  animation: heroFloat 5s ease-in-out infinite;
-}
-@keyframes heroFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
-
 /* фирменный знак InSync: по базовому контуру бежит светящийся «сигнал» */
 .logo-mark { width: 58px; height: 58px; overflow: visible; }
 .logo-mark polyline { fill: none; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
@@ -338,13 +306,6 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
   animation: logoTrace 2.6s linear infinite;   /* без drop-shadow — дешевле для слабых телефонов */
 }
 @keyframes logoTrace { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -126; } }
-
-/* GPU-слой для парящей плитки — меньше перерисовок */
-.hero-tile { will-change: transform; backface-visibility: hidden; }
-
-/* статичные декоративные кольца за знаком (без анимации — без затрат) */
-.hero-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  border-radius: 50%; border: 1px solid var(--hairline-2); pointer-events: none; }
 
 /* рамка-уголки для камеры на ПК — как в нативном сканере Telegram */
 .scan-corner { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.92); }

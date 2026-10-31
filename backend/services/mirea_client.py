@@ -3,7 +3,7 @@
 Содержит всё, что раньше тянулось из pymirea:
   * SessionCrypto   — шифрование cookies сессии в БД (Fernet + HKDF);
   * gRPC-Web клиент — кадрирование, protobuf varint/поля;
-  * get_me          — профиль студента (ФИО, группа) + проверка сессии;
+  * get_me          — группа студента + проверка сессии;
   * get_schedule    — расписание на N дней;
   * self_approve    — отметка посещаемости по токену из QR.
 
@@ -15,7 +15,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import os
 import re
 import struct
 import time

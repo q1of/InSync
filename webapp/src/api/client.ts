@@ -120,7 +120,13 @@ export interface Scan { created_at: number; lesson_name?: string | null; targets
 export const getHistoryApi = () =>
   api<{ scans: Scan[] }>('GET', '/attendance/history');
 
-// Friends
+// Friends. Отказы бэкенд возвращает как 200 с success: false — превращаем их в ошибку.
+const checked = async <T extends { success?: boolean; error?: string }>(request: Promise<T>): Promise<T> => {
+  const res = await request;
+  if (res?.success === false) throw new Error(res.error || 'Не удалось');
+  return res;
+};
+
 export interface Friend {
   telegram_id: number;
   name: string;
@@ -138,7 +144,7 @@ export const getFriendsApi = () =>
   api<Friend[]>('GET', '/friends/');
 
 export const sendFriendRequestApi = (identifier: string) =>
-  api('POST', '/friends/request', { identifier });
+  checked(api('POST', '/friends/request', { identifier }));
 
 export const getPendingApi = () =>
   api<PendingReq[]>('GET', '/friends/pending');
@@ -147,7 +153,7 @@ export const setMarkingApi = (friendTelegramId: number, enabled: boolean) =>
   api('POST', '/friends/marking', { friend_telegram_id: friendTelegramId, enabled });
 
 export const acceptFriendApi = (requestId: number) =>
-  api('POST', '/friends/accept', { request_id: requestId });
+  checked(api('POST', '/friends/accept', { request_id: requestId }));
 
 export const rejectFriendApi = (requestId: number) =>
   api('POST', '/friends/reject', { request_id: requestId });

@@ -66,8 +66,16 @@ say "Сборка webapp в статику (пара минут, терпим н
 rm -rf /var/www/insync && mkdir -p /var/www/insync && cp -r webapp/dist/* /var/www/insync/
 
 say "Caddy: статика + /api -> backend + HTTPS на ${DOMAIN}"
+# HTTP/3 выключен: QUIC режется в части сетей, и Mini App падает с ERR_CONNECTION_ABORTED.
 cat >/etc/caddy/Caddyfile <<EOF
+{
+    servers {
+        protocols h1 h2
+    }
+}
+
 ${DOMAIN} {
+    header Alt-Svc clear
     handle /api/* {
         reverse_proxy 127.0.0.1:8000
     }

@@ -98,7 +98,7 @@ export function Login({ onLoginSuccess }: Props) {
             </div>
             <button class="btn" type="submit" disabled={loading}>{loading ? 'Входим…' : 'Войти'}</button>
             <p class="faint" style={{ fontSize: 12.5, textAlign: 'center', marginTop: 14, lineHeight: 1.5 }}>
-              Данные уходят напрямую в МИРЭА. InSync хранит только зашифрованную сессию.
+              Пароль используется только для входа в МИРЭА и не сохраняется. Сессия хранится в зашифрованном виде.
             </p>
           </form>
         ) : (

@@ -61,17 +61,6 @@ class LoginResponse(BaseModel):
         }
     }
 
-class FriendRequest(BaseModel):
-    friend_telegram_id: int
-    
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {"friend_telegram_id": 123456789}
-            ]
-        }
-    }
-
 class AttendanceRequest(BaseModel):
     qr_data: str
     # Подмножество telegram_id для отметки (повтор только тем, кто ещё не отметился).

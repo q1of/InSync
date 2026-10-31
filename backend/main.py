@@ -23,7 +23,7 @@ from backend.services import mirea_service
 from backend.services.session_cache import session_cache
 from backend.routes.auth import router as auth_router
 from backend.routes.friends import router as friends_router
-from backend.routes.attendance import router as attendance_router
+from backend.routes.attendance import router as attendance_router, _is_dead_session
 from backend.routes.optout import router as optout_router
 from backend.routes.settings import router as settings_router
 
@@ -303,6 +303,10 @@ async def _check_one_session(telegram_id: int, encrypted: str) -> None:
         if new and new != cookies:
             await update_session(telegram_id, mirea_service.encrypt_session(new))
             await session_cache.set_decrypted(telegram_id, new)
+        return
+    # Сбой сети или Пульса — это не слёт сессии: не гасим её и не шлём ложное предупреждение.
+    if not _is_dead_session(status.get("error")):
+        logger.warning("Проверка сессии %s не удалась: %s", telegram_id, status.get("error"))
         return
     # Сессия слетела — гасим и предупреждаем ЗАРАНЕЕ, до пар.
     await set_session_invalid(telegram_id)

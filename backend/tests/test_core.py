@@ -10,6 +10,11 @@ import base64
 import httpx
 import pytest
 
+from backend import main as app_main
+from backend.middleware.telegram_auth import TelegramUser
+from backend.models import AttendanceRequest
+from backend.routes import attendance, auth
+from backend.services import mirea_service, pulse_auth
 from backend.services.mirea_client import extract_qr_token, SessionCrypto
 from backend.services.pulse_auth import PulseLogin, _otp_challenge
 from backend.routes.attendance import _is_retriable
@@ -203,3 +208,66 @@ class TestMaxSkip:
         out = asyncio.run(run())
         assert out.challenge is not None
         assert calls == ["GET"]
+
+
+class TestMarkWithoutSession:
+    def test_friend_without_session_gets_explicit_result(self, monkeypatch):
+        async def no_sessions(_):
+            return []
+
+        async def no_log(*_):
+            return None
+
+        monkeypatch.setattr(attendance.session_cache, "get_all_sessions_for_mark", no_sessions)
+        monkeypatch.setattr(attendance, "_log_and_notify", no_log)
+        user = TelegramUser(telegram_id=1, display_name="Я")
+
+        async def run():
+            return await attendance.mark_attendance(AttendanceRequest(qr_data="x", only=[2]), user)
+
+        res = asyncio.run(run())
+        assert [(r.telegram_id, r.success, r.retriable) for r in res.results] == [(2, False, False)]
+
+
+class TestMorningSessionCheck:
+    @pytest.mark.parametrize("error,dead", [("Ошибка сети: ConnectError", False), ("Сессия истекла", True)])
+    def test_only_dead_session_is_invalidated(self, error, dead, monkeypatch):
+        invalidated = []
+
+        async def check(_):
+            return {"valid": False, "error": error}
+
+        async def mark_invalid(tid):
+            invalidated.append(tid)
+
+        monkeypatch.setattr(mirea_service, "decrypt_session", lambda _: {"a": "1"})
+        monkeypatch.setattr(mirea_service, "check_session", check)
+        monkeypatch.setattr(app_main, "set_session_invalid", mark_invalid)
+        monkeypatch.setattr(app_main, "bot", None)
+        asyncio.run(app_main._check_one_session(7, "enc"))
+        assert invalidated == ([7] if dead else [])
+
+
+class TestScheduleCache:
+    def test_empty_schedule_is_not_cached(self, monkeypatch):
+        async def session(_):
+            return {"a": "1"}
+
+        async def empty(*_, **__):
+            return []
+
+        auth._schedule_cache.clear()
+        monkeypatch.setattr(auth.session_cache, "get_session", session)
+        monkeypatch.setattr(mirea_service, "fetch_schedule", empty)
+        asyncio.run(auth.schedule(7, TelegramUser(telegram_id=1, display_name="Я")))
+        assert auth._schedule_cache == {}
+
+
+class TestDebugFlag:
+    @pytest.mark.parametrize("value,enabled", [("0", False), ("", False), ("1", True), ("true", True)])
+    def test_only_explicit_value_enables_debug(self, value, enabled, monkeypatch):
+        import importlib
+        monkeypatch.setenv("PULSE_DEBUG", value)
+        assert importlib.reload(pulse_auth).DEBUG_ENABLED is enabled
+        monkeypatch.undo()
+        importlib.reload(pulse_auth)

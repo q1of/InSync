@@ -147,11 +147,14 @@ async def mark_attendance(
     sessions = await session_cache.get_all_sessions_for_mark(user.telegram_id)
 
     # Повтор: ограничиваемся теми, кого прислал клиент
+    no_session: list[int] = []
     if request.only is not None:
         wanted = set(request.only)
         sessions = [s for s in sessions if s[0] in wanted]
+        # Кого просили, но живой сессии нет: отвечаем явно, иначе сканер ждёт их бесконечно.
+        no_session = sorted(wanted - {s[0] for s in sessions})
 
-    if not sessions:
+    if not sessions and not no_session:
         raise HTTPException(status_code=400, detail="Нет активных сессий для отметки")
 
     # Кто сам отключил отметку на идущей сейчас паре — того не трогаем (ни друга, ни себя).
@@ -177,6 +180,10 @@ async def mark_attendance(
             retriable=False if r.get("opted_out") else _is_retriable(r["success"], r.get("error")),
         )
         for r in raw_results
+    ]
+    results += [
+        AttendanceResult(user_name="", telegram_id=tid, success=False, error="Нужно перезайти")
+        for tid in no_session
     ]
 
     # Запись истории + уведомления — В ФОНЕ, чтобы ответ на скан вернулся сразу

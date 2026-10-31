@@ -237,7 +237,7 @@ def _logged_in(client: httpx.AsyncClient, resp: httpx.Response) -> bool:
 
 # Отладочные дампы пишутся только если включён флаг PULSE_DEBUG (в .env).
 # В проде по умолчанию выключено — чтобы не засорять data/ страницами входа.
-DEBUG_ENABLED = bool(os.getenv("PULSE_DEBUG"))
+DEBUG_ENABLED = os.getenv("PULSE_DEBUG", "").strip().lower() in ("1", "true", "yes")
 
 
 def _trace(resp: httpx.Response, step: str) -> None:

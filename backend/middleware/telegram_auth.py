@@ -30,7 +30,7 @@ def verify_init_data(init_data: str) -> dict:
     secret_key = hmac.new(b"WebAppData", settings.bot_token.encode(), hashlib.sha256).digest()
     calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
     
-    if calculated_hash != received_hash:
+    if not hmac.compare_digest(calculated_hash, received_hash):
         raise ValueError("Invalid hash")
     
     auth_date = int(parsed_data.get('auth_date', 0))

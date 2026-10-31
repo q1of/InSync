@@ -38,6 +38,7 @@ async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | Non
     )
     await update_session(user.telegram_id, encrypted)
     await session_cache.set_decrypted(user.telegram_id, tokens)
+    _session_check_cache.pop(user.telegram_id, None)   # старый статус не должен пережить новый вход
 
     from backend.main import bot
     if bot and await notif_enabled(user.telegram_id, "login"):
@@ -208,5 +209,6 @@ async def schedule(days: int = 7, user: TelegramUser = Depends(get_current_user)
     if not cookies:
         raise HTTPException(status_code=401, detail="Нет активной сессии")
     lessons = await mirea_service.fetch_schedule(cookies, days=days)
-    _schedule_cache[key] = (time.time(), lessons)
+    if lessons:   # пустой ответ может быть сбоем Пульса — не закрепляем его на час
+        _schedule_cache[key] = (time.time(), lessons)
     return {"lessons": lessons}
