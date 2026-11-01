@@ -12,6 +12,7 @@ type Tab = 'scanner' | 'lessons' | 'friends' | 'profile';
 
 const BOOT_ATTEMPTS = 3;
 const BOOT_TIMEOUT_MS = 6000;
+const BOOT_RETRY_DELAY_MS = 1500;
 
 const TABS: { id: Tab; label: string; Icon: any }[] = [
   { id: 'scanner', label: 'Сканер', Icon: IconScan },
@@ -39,11 +40,13 @@ export function App() {
         setInit(false);
         return;
       } catch (e: any) {
-        if (e?.status) {   // сервер ответил ошибкой — повтор не поможет
+        // 5xx — сервер недоступен (их отдаёт и Cloudflare), остальное — его ответ: повтор не поможет.
+        if (e?.status && e.status < 500) {
           setHasSession(false);
           setInit(false);
           return;
         }
+        if (e?.status && i < BOOT_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, BOOT_RETRY_DELAY_MS));
       }
     }
     setBootFailed(true);
