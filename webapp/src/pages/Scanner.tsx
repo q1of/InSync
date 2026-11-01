@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi, getSessionApi } from '../api/client';
 import type { Friend } from '../api/client';
 import { IconCheck, IconX, IconScan, IconUsers } from '../components/icons';
-import { useTelegram } from '../hooks/useTelegram';
+import { telegramReady, useTelegram } from '../hooks/useTelegram';
 
+const SDK_WAIT_MS = 3000;
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 function isAttendanceQr(text: string): boolean {
@@ -64,8 +65,7 @@ export function Scanner({ active }: Props) {
     getSessionApi(true).then((s) => setSessionBad(!s.logged_in)).catch(() => {});
   }, [active]);
 
-  const nativeSupported = () => {
-    const tg: any = webApp;
+  const nativeSupported = (tg: any) => {
     if (!tg?.showScanQrPopup) return false;
     const p = (tg.platform || '').toLowerCase();
     return p === 'ios' || p === 'android';   // на ПК нативный сканер ботов не поддерживается
@@ -206,14 +206,16 @@ export function Scanner({ active }: Props) {
     return list;
   };
 
-  const startScan = () => {
+  const startScan = async () => {
     const list = prepare();
     if (!list.length) return;
-    if (nativeSupported()) {
+    // На быстрый тап сразу после открытия SDK может ещё грузиться.
+    const tg = await telegramReady(SDK_WAIT_MS);
+    if (nativeSupported(tg)) {
       setResultOpen(false);
       setScanning(true);
       try {
-        (webApp as any).showScanQrPopup({ text: 'Наведи на QR-код пары' }, (text: string) => { handleQr(text); return false; });
+        tg.showScanQrPopup({ text: 'Наведи на QR-код пары' }, (text: string) => { handleQr(text); return false; });
       } catch { setScanning(false); }
     } else {
       setCamOpen(true);   // десктоп: наш попап с камерой

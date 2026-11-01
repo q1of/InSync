@@ -20,29 +20,37 @@ const getInitData = (): string => {
 
 const BASE_URL = '/api';
 
-async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+async function api<T = any>(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<T> {
   const initData = getInitData();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Telegram-Init-Data': initData,
   };
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
+    });
 
-  if (!response.ok) {
-    let errorMsg = 'Ошибка сервера';
-    try {
-      const errorData = await response.json();
-      errorMsg = errorData.detail || errorMsg;
-    } catch {}
-    throw new Error(errorMsg);
+    if (!response.ok) {
+      let errorMsg = 'Ошибка сервера';
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.detail || errorMsg;
+      } catch {}
+      // status отличает ответ сервера от обрыва связи (у него status нет).
+      throw Object.assign(new Error(errorMsg), { status: response.status });
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
   }
-
-  return response.json();
 }
 
 // Auth
@@ -65,8 +73,8 @@ export interface SessionStatus {
 }
 
 // check=false — быстрый ответ без запроса к pulse.mirea.ru
-export const getSessionApi = (check = true) =>
-  api<SessionStatus>('GET', `/auth/session?check=${check}`);
+export const getSessionApi = (check = true, timeoutMs?: number) =>
+  api<SessionStatus>('GET', `/auth/session?check=${check}`, undefined, timeoutMs);
 
 export interface Lesson {
   name: string; type: string; room: string; teacher: string;
