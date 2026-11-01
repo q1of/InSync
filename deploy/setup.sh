@@ -79,10 +79,16 @@ ${DOMAIN} {
     handle /api/* {
         reverse_proxy 127.0.0.1:8000
     }
+    handle /assets/* {
+        root * /var/www/insync
+        @exists file
+        header @exists Cache-Control "public, max-age=31536000, immutable"   # имена файлов с хешем
+        file_server
+    }
     handle {
         root * /var/www/insync
         try_files {path} /index.html
-        header Cache-Control "no-store"   # не кэшируем — свежая версия после каждого деплоя
+        header Cache-Control "no-store"   # index.html не кэшируем — свежая версия после деплоя
         file_server
     }
 }
@@ -97,7 +103,7 @@ After=network-online.target
 Wants=network-online.target
 [Service]
 WorkingDirectory=${DIR}
-ExecStart=${DIR}/venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+ExecStart=${DIR}/venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --no-access-log
 Restart=always
 RestartSec=5
 [Install]
