@@ -73,10 +73,13 @@ async def init_db():
                 error_msg TEXT,
                 scan_id TEXT,            -- группирует все волны одной отметки (QR меняется каждые 5с)
                 lesson_name TEXT,        -- на какой паре (по расписанию во время скана)
+                lesson_id TEXT,          -- id пары из ответа Пульса
+                lesson_start INTEGER,    -- начало пары по расписанию (если Пульс не прислал id)
+                already_marked INTEGER DEFAULT 0,  -- уже был отмечен на этой паре до этого скана
                 created_at INTEGER DEFAULT (unixepoch())
             );
         """)
-        
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS lesson_optout(
                 telegram_id INTEGER NOT NULL REFERENCES users(telegram_id),
@@ -108,11 +111,18 @@ async def init_db():
             await db.execute("ALTER TABLE attendance_log ADD COLUMN scan_id TEXT")
         if "lesson_name" not in acols:
             await db.execute("ALTER TABLE attendance_log ADD COLUMN lesson_name TEXT")
+        if "lesson_id" not in acols:
+            await db.execute("ALTER TABLE attendance_log ADD COLUMN lesson_id TEXT")
+        if "lesson_start" not in acols:
+            await db.execute("ALTER TABLE attendance_log ADD COLUMN lesson_start INTEGER")
+        if "already_marked" not in acols:
+            await db.execute("ALTER TABLE attendance_log ADD COLUMN already_marked INTEGER DEFAULT 0")
 
         # Индексы для быстрых выборок (списки друзей, история отметок)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id, status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships(friend_id, status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_initiator ON attendance_log(initiator, scan_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_target ON attendance_log(target_user, created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_optout_user ON lesson_optout(telegram_id, start_epoch)")
 
         await db.commit()

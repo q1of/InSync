@@ -122,8 +122,7 @@ function DaySection({ day, off, onToggle }: { day: Day; off: Set<number>; onTogg
 }
 
 function LessonBlock({ l, off, onToggle }: { l: Lesson; off: Set<number>; onToggle: (l: Lesson) => void }) {
-  const markable = isMarkable(l.type);
-  const isOff = markable && off.has(l.start_epoch || 0);
+  const isOff = off.has(l.start_epoch || 0);
   return (
     <div class="panel" style={{ padding: '13px 14px', opacity: isOff ? 0.5 : 1 }}>
       {/* Верх: время · тип · управление */}
@@ -132,9 +131,7 @@ function LessonBlock({ l, off, onToggle }: { l: Lesson; off: Set<number>; onTogg
         <span class="faint" style={{ fontSize: 11.5 }}>– {fmtTime(l.end_epoch)}</span>
         <TypeTag type={l.type} />
         <div style={{ marginLeft: 'auto', flex: 'none' }}>
-          {markable
-            ? <OptoutToggle on={isOff} onClick={() => onToggle(l)} />
-            : <span class="faint" style={{ fontSize: 10.5 }}>отмечает препод.</span>}
+          <OptoutToggle on={isOff} onClick={() => onToggle(l)} />
         </div>
       </div>
 
@@ -156,7 +153,6 @@ function LessonBlock({ l, off, onToggle }: { l: Lesson; off: Set<number>; onTogg
 const isLecture = (t?: string) => /лекц|^лк$|lect/i.test((t || '').trim());
 const isPractice = (t?: string) => /практ|^пр$|^пз$/i.test((t || '').trim());
 const isLab = (t?: string) => /лаб|^лр$/i.test((t || '').trim());
-const isMarkable = (t?: string) => !isPractice(t) && !isLab(t);
 
 function shortType(t?: string): string {
   if (isLecture(t)) return 'ЛК';

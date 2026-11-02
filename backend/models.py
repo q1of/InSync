@@ -71,6 +71,8 @@ class AttendanceRequest(BaseModel):
     scan_id: Optional[str] = None
     # Название пары (определяется фронтом по расписанию во время скана) — для истории.
     lesson_name: Optional[str] = None
+    # Начало этой пары по расписанию — запасной способ узнать повторную отметку.
+    lesson_start: Optional[int] = None
 
     model_config = {
         "json_schema_extra": {
@@ -89,6 +91,8 @@ class AttendanceResult(BaseModel):
     retriable: bool = False
     # Пользователь сам отключил отметку на этой паре — не отмечаем, не ошибка
     opted_out: bool = False
+    # Уже был отмечен на этой паре (сам или другом) — не новая отметка
+    already_marked: bool = False
 
 class AttendanceResponse(BaseModel):
     results: List[AttendanceResult]

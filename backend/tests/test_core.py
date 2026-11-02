@@ -10,7 +10,7 @@ import base64
 import httpx
 import pytest
 
-from backend import main as app_main
+from backend import database, main as app_main
 from backend.middleware.telegram_auth import TelegramUser
 from backend.models import AttendanceRequest
 from backend.routes import attendance, auth
@@ -296,7 +296,7 @@ class TestApproveRefresh:
 
     def _approve(self, handler, cookies, monkeypatch):
         monkeypatch.setattr(mirea_client, "_pulse_transport", httpx.MockTransport(handler))
-        return asyncio.run(mirea_client.self_approve(cookies, self.QR))
+        return asyncio.run(mirea_client.self_approve(cookies, self.QR))[:3]
 
     def test_expired_cookie_is_refreshed_and_mark_retried(self, monkeypatch):
         handler = self._handler(FORM_POST_PAGE)
@@ -346,10 +346,122 @@ class TestApproveRefresh:
         monkeypatch.setattr(attendance, "update_session", save)
         monkeypatch.setattr(attendance, "encrypt_session", lambda c: "enc")
         monkeypatch.setattr(attendance, "_notify_marked_friends", no_notify)
-        monkeypatch.setattr(attendance, "get_db", _no_db)
         results = [{"telegram_id": 5, "user_name": "Друг", "success": True, "cookies": {"a": "1"}}]
-        asyncio.run(attendance._log_and_notify(TelegramUser(telegram_id=1, display_name="Я"), results, "q", None, None))
+        asyncio.run(attendance._log_and_notify(TelegramUser(telegram_id=1, display_name="Я"), results, None))
         assert saved == [5]
+
+
+LESSON = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+OTHER_LESSON = "cccccccc-1111-2222-3333-dddddddddddd"
+
+
+class TestApprovedLessonId:
+    def test_uuid_is_read_from_approved(self):
+        inner = b"\x0a\x24" + LESSON.encode()
+        assert mirea_client._approved_lesson_id(b"\x12\x26" + inner) == LESSON
+
+    def test_empty_approved_has_no_id(self):
+        assert mirea_client._approved_lesson_id(b"\x12\x00") is None
+
+    @pytest.mark.parametrize("error,expected", [
+        ("Вы уже отмечены на этом занятии", True),
+        ("Посещение уже подтверждено", True),
+        ("Занятие уже закончилось", False),
+        (None, False),
+    ])
+    def test_already_marked_text(self, error, expected):
+        assert mirea_client.is_already_marked(error) is expected
+
+
+class TestRepeatMarks:
+    USER = TelegramUser(telegram_id=1, display_name="Я")
+
+    @pytest.fixture
+    def db_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(database.settings, "database_path", str(tmp_path / "t.db"))
+        return asyncio.run(self._prepare())
+
+    @staticmethod
+    async def _prepare():
+        await database.init_db()
+        await database.upsert_user(1, "Я")
+        await database.upsert_user(2, "Друг")
+
+    def _mark(self, tid=2, scan="s1", lesson_id=LESSON, lesson_start=None, success=True, error=None):
+        r = {"telegram_id": tid, "user_name": "x", "success": success, "error": error, "lesson_id": lesson_id}
+        asyncio.run(attendance._record_marks(self.USER, [r], "qr", scan, "Матан", lesson_start))
+        return r
+
+    def test_first_mark_is_new(self, db_path):
+        assert "already_marked" not in self._mark()
+
+    def test_same_lesson_in_new_scan_is_repeat(self, db_path):
+        self._mark()
+        assert self._mark(scan="s2")["already_marked"] is True
+
+    def test_other_lesson_is_not_repeat(self, db_path):
+        self._mark()
+        assert "already_marked" not in self._mark(scan="s2", lesson_id=OTHER_LESSON)
+
+    def test_same_scan_is_not_repeat(self, db_path):
+        self._mark()
+        assert "already_marked" not in self._mark()
+
+    def test_schedule_start_works_without_lesson_id(self, db_path):
+        self._mark(lesson_id=None, lesson_start=1000)
+        assert self._mark(scan="s2", lesson_id=None, lesson_start=1000)["already_marked"] is True
+        assert "already_marked" not in self._mark(scan="s3", lesson_id=None, lesson_start=2000)
+
+    def test_failed_mark_does_not_count(self, db_path):
+        self._mark(success=False, error="Вы покинули корпус", lesson_id=None, lesson_start=1000)
+        r = self._mark(scan="s2", success=False, error="Вы покинули корпус", lesson_id=None, lesson_start=1000)
+        assert (r["success"], r["error"]) == (False, "Вы покинули корпус")
+
+    def test_pulse_refusal_for_marked_student_becomes_repeat(self, db_path):
+        self._mark(lesson_start=1000)
+        r = self._mark(scan="s2", success=False, error="QR истёк", lesson_id=None, lesson_start=1000)
+        assert (r["success"], r["error"], r["already_marked"]) == (True, None, True)
+
+    def test_dead_session_is_not_hidden(self, db_path):
+        self._mark(lesson_start=1000)
+        r = self._mark(scan="s2", success=False, error=SESSION_EXPIRED, lesson_id=None, lesson_start=1000)
+        assert r["success"] is False
+
+    def test_simultaneous_scans_see_each_other(self, db_path):
+        rows = [{"telegram_id": 2, "user_name": "x", "success": True, "error": None, "lesson_id": LESSON}
+                for _ in range(2)]
+
+        async def run():
+            await asyncio.gather(*(attendance._record_marks(self.USER, [r], "qr", f"s{i}", None, None)
+                                   for i, r in enumerate(rows)))
+
+        asyncio.run(run())
+        assert sorted(bool(r.get("already_marked")) for r in rows) == [False, True]
+
+    def test_history_separates_repeats(self, db_path):
+        self._mark()
+        self._mark(scan="s2")
+        scans = asyncio.run(attendance.attendance_history(self.USER))["scans"]
+        assert [t["already_marked"] for s in scans for t in s["targets"]] == [True, False]
+
+
+class TestRepeatNotification:
+    def test_repeat_sends_nothing(self, monkeypatch):
+        sent = []
+
+        class Bot:
+            async def send_message(self, tid, text, **_):
+                sent.append(tid)
+
+        async def enabled(*_):
+            return True
+
+        monkeypatch.setattr(app_main, "bot", Bot())
+        monkeypatch.setattr(attendance, "notif_enabled", enabled)
+        results = [{"telegram_id": 2, "success": True, "already_marked": True},
+                   {"telegram_id": 3, "success": True}]
+        asyncio.run(attendance._notify_marked_friends(TelegramUser(telegram_id=1, display_name="Я"), results))
+        assert sent == [3]
 
 
 class TestMorningSessionCheck:

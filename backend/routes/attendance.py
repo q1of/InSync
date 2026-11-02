@@ -11,13 +11,14 @@ from backend.models import (
 from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import encrypt_session, mark_attendance_parallel
-from backend.services.mirea_client import is_session_expired, warm_connection
+from backend.services.mirea_client import is_already_marked, is_session_expired, warm_connection
 from backend.database import get_db, opted_out_now, notif_enabled, set_session_invalid, update_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
-# Сериализует запись истории: волны одного скана идут последовательно и не плодят дубли.
+# Сериализует проверку повтора и запись истории: волны одного скана не плодят дубли,
+# а двое друзей, сканирующих одновременно, видят отметки друг друга.
 _LOG_LOCK = asyncio.Lock()
 
 
@@ -39,6 +40,8 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
         if not await notif_enabled(tid, "marked"):
             continue
         try:
+            if r.get("already_marked"):
+                continue  # уже был отмечен — новой отметки нет, сообщать не о чем
             if r.get("success"):
                 await bot.send_message(
                     tid, f"✅ <b>Вас отметили</b>\n{marker} отметил вас {where} через InSync.",
@@ -72,12 +75,37 @@ def _is_retriable(success: bool, error: str | None) -> bool:
     return True
 
 
-async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
-                          qr_data: str, scan_id: str | None, lesson_name: str | None) -> None:
-    """Фоновая запись истории + уведомления — вне критического пути ответа на скан.
+async def _flag_repeat(db, r: dict, scan_id: str | None, lesson_start: int | None) -> None:
+    """Отмечает результат как повтор, если человек уже отмечен на этой паре.
+
+    Пульс на повторную отметку отвечает обычным успехом, поэтому сверяемся с историей:
+    по id пары из ответа Пульса, а если его нет — по началу пары из расписания.
+    """
+    error = r.get("error")
+    if is_session_expired(error):
+        return
+    already = is_already_marked(error)
+    lesson_id = r.get("lesson_id")
+    if not already and (lesson_id or lesson_start):
+        async with db.execute(
+            """SELECT 1 FROM attendance_log
+               WHERE target_user = ? AND success = 1 AND scan_id IS NOT ?
+                 AND created_at >= unixepoch() - 86400
+                 AND (lesson_id = ? OR ((lesson_id IS NULL OR ? IS NULL) AND lesson_start = ?))
+               LIMIT 1""",
+            (r["telegram_id"], scan_id, lesson_id, lesson_id, lesson_start),
+        ) as cur:
+            already = await cur.fetchone() is not None
+    if already:
+        r.update(success=True, error=None, already_marked=True)
+
+
+async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: str, scan_id: str | None,
+                        lesson_name: str | None, lesson_start: int | None) -> None:
+    """Находит повторы и пишет историю. Отметка на этот момент уже сделана.
 
     При scan_id обновляем строку этой сессии (а не плодим по записи на каждый токен),
-    чтобы в истории была одна отметка с финальным статусом. Лок сериализует волны.
+    чтобы в истории была одна отметка с финальным статусом.
     """
     async with _LOG_LOCK:
         try:
@@ -85,35 +113,36 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict],
                 for r in raw_results:
                     if r.get("opted_out"):
                         continue  # сам отключил пару — это не попытка отметки, не пишем
+                    await _flag_repeat(db, r, scan_id, lesson_start)
+                    already = r.get("already_marked", False)
                     if scan_id:
                         cur = await db.execute(
                             """UPDATE attendance_log
                                SET success = ?, error_msg = ?, qr_token = ?,
-                                   lesson_name = COALESCE(?, lesson_name), created_at = unixepoch()
+                                   lesson_name = COALESCE(?, lesson_name), lesson_id = COALESCE(?, lesson_id),
+                                   lesson_start = COALESCE(?, lesson_start), already_marked = ?,
+                                   created_at = unixepoch()
                                WHERE initiator = ? AND target_user = ? AND scan_id = ?""",
-                            (r["success"], r.get("error"), qr_data, lesson_name,
-                             user.telegram_id, r["telegram_id"], scan_id),
+                            (r["success"], r.get("error"), qr_data, lesson_name, r.get("lesson_id"),
+                             lesson_start, already, user.telegram_id, r["telegram_id"], scan_id),
                         )
-                        if cur.rowcount == 0:
-                            await db.execute(
-                                """INSERT INTO attendance_log
-                                   (initiator, target_user, qr_token, success, error_msg, scan_id, lesson_name)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                                (user.telegram_id, r["telegram_id"], qr_data,
-                                 r["success"], r.get("error"), scan_id, lesson_name),
-                            )
-                    else:
-                        await db.execute(
-                            """INSERT INTO attendance_log
-                               (initiator, target_user, qr_token, success, error_msg, lesson_name)
-                               VALUES (?, ?, ?, ?, ?, ?)""",
-                            (user.telegram_id, r["telegram_id"], qr_data,
-                             r["success"], r.get("error"), lesson_name),
-                        )
+                        if cur.rowcount:
+                            continue
+                    await db.execute(
+                        """INSERT INTO attendance_log
+                           (initiator, target_user, qr_token, success, error_msg, scan_id,
+                            lesson_name, lesson_id, lesson_start, already_marked)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (user.telegram_id, r["telegram_id"], qr_data, r["success"], r.get("error"),
+                         scan_id, lesson_name, r.get("lesson_id"), lesson_start, already),
+                    )
                 await db.commit()
         except Exception as e:
             logger.error("attendance log failed: %s", e)
 
+
+async def _log_and_notify(user: TelegramUser, raw_results: list[dict], lesson_name: str | None) -> None:
+    """Фоновое сохранение сессий + уведомления — вне критического пути ответа на скан."""
     # Cookie обновилась при отметке — сохраняем, иначе следующий скан снова потратит на это время.
     for r in raw_results:
         if r.get("cookies"):
@@ -172,6 +201,14 @@ async def mark_attendance(
                 "telegram_id": tid, "user_name": name, "success": False,
                 "error": f"Отключил отметку на этой паре ({opted[tid]})", "opted_out": True,
             })
+    raw_results += [
+        {"telegram_id": tid, "user_name": "", "success": False, "error": "Нужно перезайти"}
+        for tid in no_session
+    ]
+
+    # Повторы определяем до ответа: сканирующему нужно показать «уже отмечен».
+    await _record_marks(user, raw_results, request.qr_data, request.scan_id,
+                        request.lesson_name, request.lesson_start)
 
     results = [
         AttendanceResult(
@@ -180,18 +217,14 @@ async def mark_attendance(
             success=r["success"],
             error=r.get("error"),
             opted_out=r.get("opted_out", False),
+            already_marked=r.get("already_marked", False),
             retriable=False if r.get("opted_out") else _is_retriable(r["success"], r.get("error")),
         )
         for r in raw_results
     ]
-    results += [
-        AttendanceResult(user_name="", telegram_id=tid, success=False, error="Нужно перезайти")
-        for tid in no_session
-    ]
 
-    # Запись истории + уведомления — В ФОНЕ, чтобы ответ на скан вернулся сразу
-    # (запись в SQLite с commit и отправка сообщений не держат критический путь).
-    asyncio.create_task(_log_and_notify(user, raw_results, request.qr_data, request.scan_id, request.lesson_name))
+    # Уведомления — В ФОНЕ, чтобы отправка сообщений не держала ответ на скан.
+    asyncio.create_task(_log_and_notify(user, raw_results, request.lesson_name))
 
     return AttendanceResponse(
         results=results,
@@ -216,7 +249,7 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
     async with get_db() as db:
         async with db.execute(
             """SELECT a.target_user, a.qr_token, a.scan_id, a.success, a.error_msg, a.created_at, a.lesson_name,
-                      u.display_name AS target_name
+                      a.already_marked, u.display_name AS target_name
                FROM attendance_log a
                LEFT JOIN users u ON u.telegram_id = a.target_user
                WHERE a.initiator = ?
@@ -248,6 +281,7 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
             "name": name,
             "is_self": row["target_user"] == user.telegram_id,
             "success": bool(row["success"]),
+            "already_marked": bool(row["already_marked"]),
             "error": row["error_msg"],
         })
         scan["total"] += 1

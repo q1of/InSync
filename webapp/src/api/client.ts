@@ -108,6 +108,7 @@ export interface MarkResult {
   error: string | null;
   retriable: boolean;
   opted_out: boolean;   // сам отключил отметку на этой паре — не ошибка
+  already_marked: boolean;   // уже был отмечен на этой паре — не новая отметка
 }
 export interface MarkResponse { results: MarkResult[]; total: number; successful: number; }
 
@@ -115,15 +116,16 @@ export interface MarkResponse { results: MarkResult[]; total: number; successful
 // Прогрев сессий в кеш перед сканом (чтобы первая отметка была быстрой)
 export const prewarmApi = () => api<{ ready: number }>('POST', '/attendance/prewarm');
 
-export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scanId?: string; lessonName?: string | null }) =>
+export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scanId?: string; lessonName?: string | null; lessonStart?: number | null }) =>
   api<MarkResponse>('POST', '/attendance/mark', {
     qr_data: qrData,
     only: opts?.only ?? null,
     scan_id: opts?.scanId ?? null,
     lesson_name: opts?.lessonName ?? null,
+    lesson_start: opts?.lessonStart ?? null,
   });
 
-export interface ScanTarget { name: string; is_self: boolean; success: boolean; error: string | null; }
+export interface ScanTarget { name: string; is_self: boolean; success: boolean; already_marked: boolean; error: string | null; }
 export interface Scan { created_at: number; lesson_name?: string | null; targets: ScanTarget[]; successful: number; total: number; }
 export const getHistoryApi = () =>
   api<{ scans: Scan[] }>('GET', '/attendance/history');

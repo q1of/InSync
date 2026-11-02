@@ -61,8 +61,11 @@ export function HistoryList() {
 function ScanBlock({ scan }: { scan: Scan }) {
   const time = new Date((scan.created_at || 0) * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const allOk = scan.successful === scan.total;
-  const accent = allOk ? 'var(--live)' : scan.successful === 0 ? 'var(--miss)' : 'var(--warn)';
-  const who = scan.targets.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
+  const accent = allOk ? 'var(--live)' : 'var(--fail)';
+  const names = (list: Scan['targets']) => list.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
+  const marked = scan.targets.filter((t) => t.success && !t.already_marked);
+  const already = scan.targets.filter((t) => t.already_marked);
+  const failed = scan.targets.filter((t) => !t.success);
   return (
     <div class="panel" style={{ padding: '13px 14px' }}>
       {/* Верх: время · статус */}
@@ -76,8 +79,14 @@ function ScanBlock({ scan }: { scan: Scan }) {
       {/* Название пары — переносится */}
       <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{scan.lesson_name || 'Пара'}</div>
 
-      {/* Кого отметили */}
-      <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>Отмечены: {who}</div>
+      {/* Кого отметили, кто уже был отмечен и кого не вышло */}
+      {marked.length > 0 && <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>Отмечены: {names(marked)}</div>}
+      {already.length > 0 && <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>Уже были отмечены: {names(already)}</div>}
+      {failed.map((t, i) => (
+        <div key={i} style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4, color: 'var(--fail)' }}>
+          Не отмечен{t.is_self ? 'ы' : ''}: {t.is_self ? 'Вы' : t.name}{t.error ? ` — ${t.error}` : ''}
+        </div>
+      ))}
     </div>
   );
 }

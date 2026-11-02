@@ -50,10 +50,19 @@ def is_session_expired(error: str | None) -> bool:
     return error == SESSION_EXPIRED
 
 
+_ALREADY_RE = re.compile(r"уже\s+(отмеч|подтвержд)|already", re.I)
+
+
+def is_already_marked(error: str | None) -> bool:
+    """Пульс отказал, потому что студент уже отмечен на этой паре."""
+    return bool(_ALREADY_RE.search(error or ""))
+
+
 # Внутренние (не-cookie) поля, которые нельзя слать как HTTP-cookie
 _INTERNAL = {"access_token", "token_type", "refresh_token", "expires_in"}
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+_UUID_ANY_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
 # ======================= Шифрование сессий =======================
@@ -623,57 +632,70 @@ def _parse_selfapprove(data: bytes) -> tuple[bool | None, str | None]:
     return None, None
 
 
-async def self_approve(session_cookies: dict, qr_data: str) -> tuple[bool, str | None, dict | None]:
-    """Отметка по QR. Возвращает (успех, текст_ошибки, обновлённые_cookies или None).
+def _approved_lesson_id(data: bytes) -> str | None:
+    """lessonId из approved{lessonId}: по нему видно повторную отметку на той же паре."""
+    approved = _submessage(data, 2)
+    if not approved:
+        return None
+    m = _UUID_ANY_RE.search(approved.decode("utf-8", "ignore"))
+    return m.group(0).lower() if m else approved.hex()
+
+
+async def self_approve(
+    session_cookies: dict, qr_data: str,
+) -> tuple[bool, str | None, dict | None, str | None]:
+    """Отметка по QR. Возвращает (успех, текст_ошибки, обновлённые_cookies или None, lessonId или None).
 
     Если cookie Пульса протухла, один раз обновляет её по KEYCLOAK_IDENTITY и повторяет.
     """
     token = extract_qr_token(qr_data)
     if not token:
-        return False, "Не удалось распознать QR-код", None
+        return False, "Не удалось распознать QR-код", None, None
     payload = b"\x0a" + _varint(len(token.encode())) + token.encode()
 
-    ok, err, cookies = await _approve(session_cookies, payload)
+    ok, err, cookies, lesson_id = await _approve(session_cookies, payload)
     if is_session_expired(err) and session_cookies.get("KEYCLOAK_IDENTITY"):
         fresh = {k: v for k, v in session_cookies.items() if k not in AUTH_COOKIES}
-        ok, err, cookies = await _approve(fresh, payload)
+        ok, err, cookies, lesson_id = await _approve(fresh, payload)
 
     changed = any(cookies.get(n) and cookies.get(n) != session_cookies.get(n) for n in AUTH_COOKIES)
-    return ok, err, cookies if changed else None
+    return ok, err, cookies if changed else None, lesson_id
 
 
-async def _approve(session_cookies: dict, payload: bytes) -> tuple[bool, str | None, dict]:
+async def _approve(session_cookies: dict, payload: bytes) -> tuple[bool, str | None, dict, str | None]:
     cli = PulseClient(session_cookies)
-    ok, err = await _approve_once(cli, payload)
-    return ok, err, cli.session_cookies
+    ok, err, lesson_id = await _approve_once(cli, payload)
+    return ok, err, cli.session_cookies, lesson_id
 
 
-async def _approve_once(cli: PulseClient, payload: bytes) -> tuple[bool, str | None]:
+async def _approve_once(cli: PulseClient, payload: bytes) -> tuple[bool, str | None, str | None]:
     try:
         try:
             # Обновление cookie не должно держать всю волну: QR живёт недолго.
             ok, err = await asyncio.wait_for(cli.ensure_cookie(), timeout=8.0)
         except asyncio.TimeoutError:
-            return False, "Сервер не отвечает"
+            return False, "Сервер не отвечает", None
         if not ok:
-            return False, err or SESSION_EXPIRED
+            return False, err or SESSION_EXPIRED, None
         # Жёсткий тайм-аут: один зависший друг не должен держать волну (QR живёт ~20с).
         raw, err = await cli.grpc(SELF_APPROVE_URL, payload, timeout=9.0)
         if err:
-            return False, err
+            return False, err, None
         if raw == b"":
             # Пустой ответ, но с подтверждённым grpc-status=0 (это гарантирует grpc()):
             # RPC прошёл успешно — считаем отметку принятой. Ложного «отмечен» нет,
             # т.к. ответы без статуса grpc() уже превращает в ошибку.
-            return True, None
+            return True, None, None
+        # Схема ответа известна не полностью: по этой строке видно, чем первая отметка
+        # отличается от повторной и от отказа.
+        logger.warning("self_approve ответ: raw=%s", (raw or b"").hex()[:96])
         approved, reason = _parse_selfapprove(raw or b"")
         if approved is True:
-            return True, None
+            return True, None, _approved_lesson_id(raw or b"")
         if approved is False:
-            return False, reason or "Отметка пока недоступна"
+            return False, reason or "Отметка пока недоступна", None
         # Пусто/непонятно: у настоящей отметки есть поле approved{lessonId}, поэтому
         # без явного подтверждения успехом НЕ считаем (лучше повтор, чем ложное «отмечен»).
-        logger.warning("self_approve без подтверждения: raw=%s", (raw or b"").hex()[:96])
-        return False, "Пульс не подтвердил отметку — попробуйте ещё раз"
+        return False, "Пульс не подтвердил отметку — попробуйте ещё раз", None
     finally:
         await cli.close()
