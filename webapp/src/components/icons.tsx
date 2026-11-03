@@ -70,9 +70,9 @@ export const IconBell = ({ size, color, stroke }: P) => svg(<>
 
 
 export const IconPass = ({ size, color, stroke }: P) => svg(<>
-  <rect x="2" y="5" width="20" height="14" rx="2" />
-  <circle cx="8" cy="12" r="2.5" />
-  <path d="M14 10h4M14 14h3" />
+  <rect x="2" y="3.5" width="20" height="17" rx="2.5" />
+  <circle cx="8.5" cy="10.5" r="2.5" />
+  <path d="M4.5 17c.6-1.9 2.2-3 4-3s3.4 1.1 4 3M15 9h4M15 13h3" />
 </>, size, color, stroke);
 
 export const IconChevron = ({ size, color, stroke, left }: P & { left?: boolean }) =>
