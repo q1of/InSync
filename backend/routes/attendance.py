@@ -43,8 +43,9 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
             if r.get("already_marked"):
                 continue  # уже был отмечен — новой отметки нет, сообщать не о чем
             if r.get("success"):
+                warning = f"\n⚠️ {html.escape(r['warning'])}." if r.get("warning") else ""
                 await bot.send_message(
-                    tid, f"✅ <b>Вас отметили</b>\n{marker} отметил вас {where} через InSync.",
+                    tid, f"✅ <b>Вас отметили</b>\n{marker} отметил вас {where} через InSync.{warning}",
                     parse_mode="HTML")
             elif r.get("opted_out"):
                 await bot.send_message(
@@ -97,7 +98,7 @@ async def _flag_repeat(db, r: dict, scan_id: str | None, lesson_start: int | Non
         ) as cur:
             already = await cur.fetchone() is not None
     if already:
-        r.update(success=True, error=None, already_marked=True)
+        r.update(success=True, error=None, warning=None, already_marked=True)
 
 
 async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: str, scan_id: str | None,
@@ -123,7 +124,7 @@ async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: st
                                    lesson_start = COALESCE(?, lesson_start), already_marked = ?,
                                    created_at = unixepoch()
                                WHERE initiator = ? AND target_user = ? AND scan_id = ?""",
-                            (r["success"], r.get("error"), qr_data, lesson_name, r.get("lesson_id"),
+                            (r["success"], r.get("error") or r.get("warning"), qr_data, lesson_name, r.get("lesson_id"),
                              lesson_start, already, user.telegram_id, r["telegram_id"], scan_id),
                         )
                         if cur.rowcount:
@@ -133,7 +134,7 @@ async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: st
                            (initiator, target_user, qr_token, success, error_msg, scan_id,
                             lesson_name, lesson_id, lesson_start, already_marked)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (user.telegram_id, r["telegram_id"], qr_data, r["success"], r.get("error"),
+                        (user.telegram_id, r["telegram_id"], qr_data, r["success"], r.get("error") or r.get("warning"),
                          scan_id, lesson_name, r.get("lesson_id"), lesson_start, already),
                     )
                 await db.commit()
@@ -194,7 +195,8 @@ async def mark_attendance(
     opted = await opted_out_now([s[0] for s in sessions], now)
 
     to_mark = [s for s in sessions if s[0] not in opted]
-    raw_results = await mark_attendance_parallel(request.qr_data, to_mark) if to_mark else []
+    raw_results = await mark_attendance_parallel(
+        request.qr_data, to_mark, request.lesson_room, request.lesson_building) if to_mark else []
     for tid, name, _ in sessions:
         if tid in opted:
             raw_results.append({
@@ -218,6 +220,7 @@ async def mark_attendance(
             error=r.get("error"),
             opted_out=r.get("opted_out", False),
             already_marked=r.get("already_marked", False),
+            warning=r.get("warning"),
             retriable=False if r.get("opted_out") else _is_retriable(r["success"], r.get("error")),
         )
         for r in raw_results
@@ -282,6 +285,7 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
             "is_self": row["target_user"] == user.telegram_id,
             "success": bool(row["success"]),
             "already_marked": bool(row["already_marked"]),
+            # У успешной отметки в error_msg лежит предупреждение «не в корпусе»
             "error": row["error_msg"],
         })
         scan["total"] += 1

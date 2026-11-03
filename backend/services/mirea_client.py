@@ -439,7 +439,13 @@ async def get_me(session_cookies: dict) -> dict:
     group = next((m.group(0) for s in strings for m in [_GROUP_RE.search(s)] if m), None)
     merged = dict(session_cookies); merged.update(cookies_out)
     merged["__token_refreshed_at"] = str(int(time.time()))
-    return {"valid": True, "cookies": merged, "group_name": group}
+    return {"valid": True, "cookies": merged, "group_name": group, "user_id": _pulse_user_id(raw)}
+
+
+def _pulse_user_id(raw: bytes) -> str | None:
+    """authorized.user.userId из GetMeInfo — под этим id человек известен сервису пропуска."""
+    user = _submessage(_submessage(raw, 1) or b"", 1) or b""
+    return _string_field(user, 1)
 
 
 # ------- Расписание -------
@@ -449,6 +455,7 @@ class Lesson:
     name: str
     lesson_type: str = ""
     room: str = ""
+    building: str = ""
     teacher: str = ""
     start_epoch: float | None = None
     end_epoch: float | None = None
@@ -496,7 +503,7 @@ def _parse_teacher(data: bytes) -> str:
 
 
 def _parse_lesson(data: bytes) -> Lesson | None:
-    name = ltype = room = teacher = subgroup = ""
+    name = ltype = room = building = teacher = subgroup = ""
     start = end = None
     p = 0
     while p < len(data):
@@ -514,6 +521,7 @@ def _parse_lesson(data: bytes) -> Lesson | None:
                 ltype = _string_field(raw, 2) or ""
             elif field == 6:
                 room = _string_field(raw, 2) or ""
+                building = _string_field(raw, 3) or ""
             elif field == 7:
                 teacher = _parse_teacher(raw)
             elif field == 8 and not end:
@@ -524,7 +532,7 @@ def _parse_lesson(data: bytes) -> Lesson | None:
             p = _skip(data, p, wt)
     if not name:
         return None
-    return Lesson(name, ltype, room, teacher, start, end, subgroup)
+    return Lesson(name, ltype, room, building, teacher, start, end, subgroup)
 
 
 def _parse_lessons(data: bytes) -> list[Lesson]:
@@ -569,11 +577,111 @@ async def get_schedule(session_cookies: dict, days: int = 7) -> list[dict]:
     out: list[dict] = []
     for day in results:
         for l in day:
-            out.append({"name": l.name, "type": l.lesson_type, "room": l.room,
+            out.append({"name": l.name, "type": l.lesson_type, "room": l.room, "building": l.building,
                         "teacher": l.teacher, "subgroup": l.subgroup,
                         "start_epoch": l.start_epoch, "end_epoch": l.end_epoch})
     out.sort(key=lambda x: x["start_epoch"] or 0)
     return out
+
+
+# ------- Пропуск (турникеты) -------
+
+HUMANPASS = f"{PULSE}/rtu_tc.rtu_attend.humanpass.HumanPassService"
+ACS_TIMELINE_URL = f"{HUMANPASS}/GetHumanAcsTimeline"
+ACS_STATS_URL = f"{HUMANPASS}/GetHumanAcsAttendanceStats"
+
+ACS_ENTER, ACS_EXIT, ACS_MOVE = 1, 2, 3   # EventKind Пульса
+
+
+def _fields(data: bytes):
+    """Поля protobuf верхнего уровня: (номер, тип, значение). Значение — bytes, int или double."""
+    p = 0
+    while p < len(data):
+        key, p = _read_varint(data, p)
+        field, wt = key >> 3, key & 7
+        if wt == 0:
+            val, p = _read_varint(data, p)
+        elif wt == 2:
+            val, p = _ld(data, p)
+        elif wt == 1 and p + 8 <= len(data):
+            val = struct.unpack("<d", data[p:p + 8])[0]
+            p += 8
+        else:
+            p = _skip(data, p, wt)
+            continue
+        yield field, wt, val
+
+
+def _msg(field: int, payload: bytes) -> bytes:
+    return _varint(field << 3 | 2) + _varint(len(payload)) + payload
+
+
+def _encode_acs_request(human_id: str, start: float, end: float, ascending: bool) -> bytes:
+    """humanId, timeRange{start, end}, eventType=ALL и (для ленты) порядок по возрастанию."""
+    time_range = _msg(1, b"" + _varint(int(start))) + _msg(2, b"" + _varint(int(end)))
+    out = _msg(1, human_id.encode()) + _msg(2, time_range) + b""
+    return out + (b" " if ascending else b"")
+
+
+def _parse_acs_event(data: bytes) -> dict | None:
+    ev = {"time": None, "kind": 0, "enter": "", "exit": ""}
+    for field, wt, val in _fields(data):
+        if field == 2 and wt == 2:
+            ev["time"] = _parse_timestamp(val)
+        elif field == 3 and wt == 2:
+            ev["enter"] = _string_field(val, 2) or ""
+        elif field == 4 and wt == 2:
+            ev["exit"] = _string_field(val, 2) or ""
+        elif field == 5 and wt == 0:
+            ev["kind"] = val
+    return ev if ev["time"] else None
+
+
+def _parse_acs_timeline(data: bytes) -> list[dict]:
+    """dwellPeriods: либо пачка перемещений внутри (movementEvents), либо вход/выход (borderEvent)."""
+    events: list[dict] = []
+    for field, wt, period in _fields(data):
+        if field != 1 or wt != 2:
+            continue
+        for kind, kwt, part in _fields(period):
+            if kwt != 2:
+                continue
+            if kind == 1:
+                rows = [v for f, w, v in _fields(part) if f == 1 and w == 2]
+            elif kind == 2:
+                rows = [part]
+            else:
+                continue
+            events += [e for e in map(_parse_acs_event, rows) if e]
+    events.sort(key=lambda e: e["time"])
+    return events
+
+
+def _parse_acs_hours(data: bytes) -> float:
+    return next((v for f, w, v in _fields(data) if f == 2 and w == 1), 0.0)
+
+
+async def get_acs_events(session_cookies: dict, human_id: str, start: float, end: float,
+                         with_hours: bool = False) -> dict:
+    """События турникетов за [start, end] по времени и, если нужно, часы в вузе за этот период."""
+    cli = PulseClient(session_cookies)
+    try:
+        ok, err = await cli.ensure_cookie()
+        if not ok:
+            return {"error": err or SESSION_EXPIRED}
+        calls = [cli.grpc(ACS_TIMELINE_URL, _encode_acs_request(human_id, start, end, True), timeout=8.0)]
+        if with_hours:
+            calls.append(cli.grpc(ACS_STATS_URL, _encode_acs_request(human_id, start, end, False), timeout=8.0))
+        results = await asyncio.gather(*calls)
+    finally:
+        await cli.close()
+    raw, err = results[0]
+    if err:
+        return {"error": err}
+    hours = None
+    if with_hours and not results[1][1]:
+        hours = _parse_acs_hours(results[1][0] or b"")
+    return {"error": None, "events": _parse_acs_timeline(raw or b""), "hours": hours}
 
 
 # ------- Отметка посещаемости -------

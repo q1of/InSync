@@ -14,7 +14,7 @@ from backend import database, main as app_main
 from backend.middleware.telegram_auth import TelegramUser
 from backend.models import AttendanceRequest
 from backend.routes import attendance, auth
-from backend.services import mirea_client, mirea_service, pulse_auth
+from backend.services import acs as acs_mod, mirea_client, mirea_service, pulse_auth
 from backend.services.mirea_client import (
     PulseClient, SESSION_EXPIRED, SessionCrypto, extract_qr_token, is_session_expired,
 )
@@ -527,3 +527,105 @@ class TestDebugFlag:
         assert importlib.reload(pulse_auth).DEBUG_ENABLED is enabled
         monkeypatch.undo()
         importlib.reload(pulse_auth)
+
+
+def _pb(field: int, payload: bytes) -> bytes:
+    return mirea_client._msg(field, payload)
+
+
+def _acs_event(t: int, kind: int, enter: str = "", exit_: str = "") -> bytes:
+    ev = _pb(1, b"id") + _pb(2, b"\x08" + mirea_client._varint(t)) + b"\x28" + bytes([kind])
+    if enter:
+        ev += _pb(3, _pb(1, b"z") + _pb(2, enter.encode()))
+    if exit_:
+        ev += _pb(4, _pb(1, b"z") + _pb(2, exit_.encode()))
+    return ev
+
+
+class TestAcsTimeline:
+    T = 1_793_600_000
+
+    def test_periods_are_flattened_by_time(self):
+        movement = _pb(1, _acs_event(self.T + 60, 3, "В78 А 1эт ЛК-3", "Неконтролируемая территория"))
+        movement += b"\x11" + b"\x00" * 8
+        raw = (_pb(1, _pb(2, _acs_event(self.T + 120, 2, exit_="В78 А 1эт ЛК-3")))
+               + _pb(1, _pb(2, _acs_event(self.T, 1, "В78 А 2эт ЦентральныйВход")))
+               + _pb(1, _pb(1, movement)))
+        events = mirea_client._parse_acs_timeline(raw)
+        assert [(e["time"] - self.T, e["kind"]) for e in events] == [(0, 1), (60, 3), (120, 2)]
+        assert events[1]["exit"] == "Неконтролируемая территория"
+
+    def test_request_layout(self):
+        req = mirea_client._encode_acs_request("h", self.T, self.T + 10, True)
+        fields = [(f, v) for f, _, v in mirea_client._fields(req)]
+        assert fields[0] == (1, b"h") and fields[2:] == [(3, 1), (4, 1)]
+        rng = [mirea_client._parse_timestamp(v) for _, _, v in mirea_client._fields(fields[1][1])]
+        assert rng == [self.T, self.T + 10]
+
+    def test_hours_double(self):
+        import struct
+        assert acs_mod.ACS_ENTER == 1
+        assert mirea_client._parse_acs_hours(b"\x08\x01\x11" + struct.pack("<d", 5.5)) == 5.5
+
+    def test_user_id_from_me_info(self):
+        raw = _pb(1, _pb(1, _pb(1, b"user-uuid") + _pb(2, "Иван".encode())))
+        assert mirea_client._pulse_user_id(raw) == "user-uuid"
+
+    def test_describe_matches_pulse_wording(self):
+        e = {"time": 1, "kind": 1, "enter": "В78 Корпус И", "exit": ""}
+        assert acs_mod.describe(e)["place"] == "через: В78 Корпус И"
+        e = {"time": 1, "kind": 3, "enter": "В78 А ЛК-3", "exit": "Неконтролируемая территория"}
+        assert (acs_mod.describe(e)["title"], acs_mod.describe(e)["place"]) == (
+            "В78 А ЛК-3", "из: Неконтролируемая территория")
+
+
+class TestPresence:
+    NOW = 1_000_000
+
+    def ev(self, kind, zone, dt=-600):
+        return {"time": self.NOW + dt, "kind": kind, "enter": zone if kind != 2 else "",
+                "exit": zone if kind == 2 else ""}
+
+    @pytest.mark.parametrize("room,building,expected", [
+        ("А-213", "В-78", ("В78", "А")),
+        ("И-205-а (В-78)", "", ("В78", "И")),
+        ("ИВЦ-104", "В-78", ("В78", None)),
+        ("435", "С-20", ("С20", None)),
+        ("", "", (None, None)),
+    ])
+    def test_lesson_place(self, room, building, expected):
+        assert acs_mod.lesson_place(room, building) == expected
+
+    @pytest.mark.parametrize("zone,expected", [
+        ("В78 А 2эт ЦентральныйВход", ("В78", "А")),
+        ("В78 Корпус И", ("В78", "И")),
+        ("Неконтролируемая территория", (None, None)),
+    ])
+    def test_zone_place(self, zone, expected):
+        assert acs_mod.zone_place(zone) == expected
+
+    def test_inside_right_building(self):
+        assert acs_mod.presence_problem([self.ev(1, "В78 А 2эт ЦентральныйВход")], self.NOW, "А-213", "В-78") is None
+
+    def test_other_building(self):
+        problem = acs_mod.presence_problem([self.ev(1, "В78 Корпус И")], self.NOW, "А-213", "В-78")
+        assert "другом корпусе" in problem
+
+    def test_left_or_never_entered(self):
+        assert acs_mod.presence_problem([], self.NOW, "А-213", "В-78") == acs_mod.NOT_INSIDE
+        events = [self.ev(1, "В78 А 2эт", -900), self.ev(2, "В78 А 1эт ЛК-3", -300)]
+        assert acs_mod.presence_problem(events, self.NOW, "А-213", "В-78") == acs_mod.NOT_INSIDE
+
+    def test_unknown_names_are_not_an_error(self):
+        assert acs_mod.presence_problem([self.ev(1, "Главный вход")], self.NOW, "ИВЦ-104", "") is None
+
+    def test_future_events_are_ignored(self):
+        events = [self.ev(1, "В78 А 2эт", -900), self.ev(2, "В78 А 1эт", 3600)]
+        assert acs_mod.presence_problem(events, self.NOW, "А-213", "В-78") is None
+
+    def test_presence_failure_stays_silent(self, monkeypatch):
+        async def broken(*_):
+            raise RuntimeError("Пульс упал")
+
+        monkeypatch.setattr(acs_mod, "pulse_user_id", broken)
+        assert asyncio.run(acs_mod.presence_warning(1, {}, "А-213", "В-78")) is None

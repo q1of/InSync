@@ -60,6 +60,20 @@ class SessionCache:
                 is_valid=True,
             )
 
+    async def load(self, telegram_id: int) -> dict | None:
+        """Сессия из кеша, а если её там нет — расшифрованная из БД."""
+        cookies = await self.get_session(telegram_id)
+        if cookies:
+            return cookies
+        async with get_db() as db:
+            async with db.execute(
+                "SELECT encrypted_session FROM users WHERE telegram_id = ?", (telegram_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+        if row and row["encrypted_session"]:
+            await self.set_session(telegram_id, row["encrypted_session"])
+        return await self.get_session(telegram_id)
+
     async def invalidate(self, telegram_id: int) -> None:
         """Удаляет сессию из кеша."""
         async with self._lock:

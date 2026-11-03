@@ -23,7 +23,10 @@ function qrToken(text: string): string | null {
 }
 
 type Status = 'pending' | 'marking' | 'done' | 'already' | 'failed' | 'skipped';
-interface Target { id: number; name: string; is_self: boolean; status: Status; error?: string | null; attempts: number; }
+interface Target {
+  id: number; name: string; is_self: boolean; status: Status; error?: string | null; attempts: number;
+  warning?: string | null;   // отмечен, но по турникетам не в корпусе пары
+}
 
 const MAX_DEAD_ATTEMPTS = 3;
 const MAX_RETRY_ATTEMPTS = 6;   // QR меняется каждые 5с: не держим сканер из-за того, кого Пульс не пускает
@@ -49,6 +52,7 @@ export function Scanner({ active }: Props) {
   const doneRef = useRef(false);
   const lessonRef = useRef<string | null>(null);
   const lessonStartRef = useRef<number | null>(null);
+  const lessonPlaceRef = useRef<{ room: string; building: string } | null>(null);
   const hapticRef = useRef(haptic);
   const scannerRef = useRef<any>(null);
   const activeRef = useRef(active);
@@ -86,13 +90,14 @@ export function Scanner({ active }: Props) {
     try {
       const res = await markAttendanceApi(text, {
         only: ids, scanId: scanIdRef.current, lessonName: lessonRef.current, lessonStart: lessonStartRef.current,
+        lessonRoom: lessonPlaceRef.current?.room, lessonBuilding: lessonPlaceRef.current?.building,
       });
       const byId = new Map(res.results.map((r) => [r.telegram_id, r]));
       setTargets((ts) =>
         ts.map((t) => {
           if (!ids.includes(t.id)) return t;
           const r = byId.get(t.id);
-          if (r?.success) return { ...t, status: r.already_marked ? 'already' : 'done', error: null };
+          if (r?.success) return { ...t, status: r.already_marked ? 'already' : 'done', error: null, warning: r.warning };
           if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           const attempts = t.attempts + 1;
           const error = r ? r.error : 'Нужно перезайти';
@@ -125,7 +130,7 @@ export function Scanner({ active }: Props) {
     const openLeft = targets.some((t) => t.status === 'pending' || t.status === 'marking');
     if (openLeft) return;
     doneRef.current = true;
-    const allOk = targets.every((t) => t.status === 'done' || t.status === 'already' || t.status === 'skipped');
+    const allOk = targets.every((t) => (t.status === 'done' && !t.warning) || t.status === 'already' || t.status === 'skipped');
     hapticRef.current?.notificationOccurred?.(allOk ? 'success' : 'error');
     // Везде одинаково: закрываем сканер/камеру и показываем единый попап итога.
     if (scanning) { try { (webApp as any)?.closeScanQrPopup?.(); } catch {} setScanning(false); }
@@ -200,7 +205,8 @@ export function Scanner({ active }: Props) {
       const l = r.lessons.find((x) => (x.start_epoch || 0) - 900 <= now && now <= (x.end_epoch || (x.start_epoch || 0) + 5400));
       lessonRef.current = l?.name || null;
       lessonStartRef.current = l?.start_epoch ? Math.round(l.start_epoch) : null;
-    }).catch(() => { lessonRef.current = null; lessonStartRef.current = null; });
+      lessonPlaceRef.current = l ? { room: l.room, building: l.building } : null;
+    }).catch(() => { lessonRef.current = null; lessonStartRef.current = null; lessonPlaceRef.current = null; });
     const list = buildTargets();
     scanIdRef.current = Math.random().toString(36).slice(2) + Date.now().toString(36);
     lastTokenRef.current = null;
@@ -243,7 +249,7 @@ export function Scanner({ active }: Props) {
     <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {targets.map((t) => (
         <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-          <StatusBadge status={t.status === 'pending' ? 'failed' : t.status} />
+          <StatusBadge status={t.status === 'pending' ? 'failed' : t.status} warn={!!t.warning} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {t.is_self ? 'Ты' : t.name}
@@ -366,15 +372,18 @@ function Popup({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function statusNote(t: Target): string {
-  if (t.status === 'done') return 'отмечен';
+  if (t.status === 'done') return t.warning ? `отмечен, но ${t.warning.charAt(0).toLowerCase()}${t.warning.slice(1)}` : 'отмечен';
   if (t.status === 'already') return 'уже был отмечен на этой паре';
   if (t.status === 'skipped') return 'отметка на этой паре отключена';
   if (t.status === 'marking') return 'отмечаем…';
   return t.error || 'не отмечен';
 }
 
-function StatusBadge({ status }: { status: Status }) {
+function StatusBadge({ status, warn }: { status: Status; warn?: boolean }) {
   const box = { width: 30, height: 30, borderRadius: '50%', display: 'grid', placeItems: 'center', flex: 'none' } as const;
+  if (status === 'done' && warn) {
+    return <div style={{ ...box, background: 'var(--fail-dim)', color: 'var(--fail)' }}><IconCheck size={16} stroke={2.6} /></div>;
+  }
   if (status === 'done') {
     return <div style={{ ...box, background: 'var(--live-dim)', color: 'var(--live)' }}><IconCheck size={16} stroke={2.6} /></div>;
   }

@@ -73,6 +73,9 @@ class AttendanceRequest(BaseModel):
     lesson_name: Optional[str] = None
     # Начало этой пары по расписанию — запасной способ узнать повторную отметку.
     lesson_start: Optional[int] = None
+    # Аудитория пары — с ней сверяем турникеты («вошёл ли в корпус»).
+    lesson_room: Optional[str] = None
+    lesson_building: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {
@@ -93,6 +96,8 @@ class AttendanceResult(BaseModel):
     opted_out: bool = False
     # Уже был отмечен на этой паре (сам или другом) — не новая отметка
     already_marked: bool = False
+    # Отмечен, но по турникетам не в корпусе пары — отметка может не засчитаться
+    warning: Optional[str] = None
 
 class AttendanceResponse(BaseModel):
     results: List[AttendanceResult]

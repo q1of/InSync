@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from backend.config import settings
+from backend.services.acs import presence_warning
 from backend.services.mirea_client import SessionCrypto, get_me, get_schedule, self_approve
 from backend.services.pulse_auth import PulseLogin, Challenge, code_hint
 
@@ -168,16 +169,20 @@ async def fetch_schedule(cookies: dict, days: int = 7) -> list[dict]:
 async def mark_attendance_parallel(
     qr_data: str,
     sessions: list[tuple[int, str, dict]],
+    room: str | None = None,
+    building: str | None = None,
 ) -> list[dict[str, Any]]:
     """Параллельная отметка за себя и друзей.
 
     sessions: [(telegram_id, display_name, decrypted_cookies), ...]
+    room/building — аудитория пары: после успешной отметки сверяем её с турникетами.
     """
     async def _one(telegram_id: int, name: str, cookies: dict) -> dict:
         try:
             ok, err, new_cookies, lesson_id = await self_approve(cookies, qr_data)
+            warning = await presence_warning(telegram_id, new_cookies or cookies, room, building) if ok else None
             return {"telegram_id": telegram_id, "user_name": name, "cookies": new_cookies, "lesson_id": lesson_id,
-                    "success": ok, "error": None if ok else (err or "Не удалось отметить")}
+                    "success": ok, "warning": warning, "error": None if ok else (err or "Не удалось отметить")}
         except Exception as e:
             logger.error("Attendance failed for %s: %s", telegram_id, e)
             return {"telegram_id": telegram_id, "user_name": name, "success": False, "error": str(e)}

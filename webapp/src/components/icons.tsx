@@ -68,3 +68,12 @@ export const IconBell = ({ size, color, stroke }: P) => svg(<>
 </>, size, color, stroke);
 
 
+
+export const IconPass = ({ size, color, stroke }: P) => svg(<>
+  <rect x="2" y="5" width="20" height="14" rx="2" />
+  <circle cx="8" cy="12" r="2.5" />
+  <path d="M14 10h4M14 14h3" />
+</>, size, color, stroke);
+
+export const IconChevron = ({ size, color, stroke, left }: P & { left?: boolean }) =>
+  svg(<polyline points={left ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />, size, color, stroke);
