@@ -131,7 +131,7 @@ export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scan
 
 // Пропуск: события турникетов за день
 export interface PassEvent { time: number; kind: 'enter' | 'exit' | 'move'; title: string; place: string; }
-export interface PassDay { day: string; hours: number | null; events: PassEvent[]; }
+export interface PassDay { day: string; events: PassEvent[]; }
 export const getPassDayApi = (day: string) => api<PassDay>('GET', `/pass/day?day=${day}`);
 
 export interface ScanTarget { name: string; is_self: boolean; success: boolean; already_marked: boolean; error: string | null; }

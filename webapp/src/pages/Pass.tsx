@@ -12,13 +12,6 @@ function fmtTime(epoch: number): string {
   return new Date(epoch * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' });
 }
 
-function fmtHours(h: number | null): string {
-  if (h == null) return '';
-  const total = Math.round(h * 60);
-  const hh = Math.floor(total / 60), mm = total % 60;
-  return hh ? `${hh} ч ${mm} м` : `${mm} м`;
-}
-
 function dayTitle(day: string, today: string): { tag: string; date: string } {
   const d = new Date(`${day}T12:00:00Z`);
   const date = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -75,12 +68,6 @@ export function Pass() {
         </div>
       ) : (
         <div class="enter">
-          {data.hours != null && (
-            <div class="panel" style={{ padding: '13px 14px', marginBottom: 14, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span class="faint" style={{ fontSize: 13 }}>В вузе</span>
-              <span style={{ marginLeft: 'auto', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 15 }}>{fmtHours(data.hours)}</span>
-            </div>
-          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {data.events.map((e, i) => (
               <div key={i} class="panel" style={{ padding: '13px 14px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>

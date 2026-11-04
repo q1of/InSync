@@ -588,7 +588,6 @@ async def get_schedule(session_cookies: dict, days: int = 7) -> list[dict]:
 
 HUMANPASS = f"{PULSE}/rtu_tc.rtu_attend.humanpass.HumanPassService"
 ACS_TIMELINE_URL = f"{HUMANPASS}/GetHumanAcsTimeline"
-ACS_STATS_URL = f"{HUMANPASS}/GetHumanAcsAttendanceStats"
 
 ACS_ENTER, ACS_EXIT, ACS_MOVE = 1, 2, 3   # EventKind Пульса
 
@@ -618,9 +617,9 @@ def _msg(field: int, payload: bytes) -> bytes:
 
 def _encode_acs_request(human_id: str, start: float, end: float, ascending: bool) -> bytes:
     """humanId, timeRange{start, end}, eventType=ALL и (для ленты) порядок по возрастанию."""
-    time_range = _msg(1, b"" + _varint(int(start))) + _msg(2, b"" + _varint(int(end)))
-    out = _msg(1, human_id.encode()) + _msg(2, time_range) + b""
-    return out + (b" " if ascending else b"")
+    time_range = _msg(1, b"\x08" + _varint(int(start))) + _msg(2, b"\x08" + _varint(int(end)))
+    out = _msg(1, human_id.encode()) + _msg(2, time_range) + b"\x18\x01"
+    return out + (b"\x20\x01" if ascending else b"")
 
 
 def _parse_acs_event(data: bytes) -> dict | None:
@@ -657,31 +656,19 @@ def _parse_acs_timeline(data: bytes) -> list[dict]:
     return events
 
 
-def _parse_acs_hours(data: bytes) -> float:
-    return next((v for f, w, v in _fields(data) if f == 2 and w == 1), 0.0)
-
-
-async def get_acs_events(session_cookies: dict, human_id: str, start: float, end: float,
-                         with_hours: bool = False) -> dict:
-    """События турникетов за [start, end] по времени и, если нужно, часы в вузе за этот период."""
+async def get_acs_events(session_cookies: dict, human_id: str, start: float, end: float) -> dict:
+    """События турникетов за [start, end] по времени."""
     cli = PulseClient(session_cookies)
     try:
         ok, err = await cli.ensure_cookie()
         if not ok:
             return {"error": err or SESSION_EXPIRED}
-        calls = [cli.grpc(ACS_TIMELINE_URL, _encode_acs_request(human_id, start, end, True), timeout=8.0)]
-        if with_hours:
-            calls.append(cli.grpc(ACS_STATS_URL, _encode_acs_request(human_id, start, end, False), timeout=8.0))
-        results = await asyncio.gather(*calls)
+        raw, err = await cli.grpc(ACS_TIMELINE_URL, _encode_acs_request(human_id, start, end, True), timeout=8.0)
     finally:
         await cli.close()
-    raw, err = results[0]
     if err:
         return {"error": err}
-    hours = None
-    if with_hours and not results[1][1]:
-        hours = _parse_acs_hours(results[1][0] or b"")
-    return {"error": None, "events": _parse_acs_timeline(raw or b""), "hours": hours}
+    return {"error": None, "events": _parse_acs_timeline(raw or b"")}
 
 
 # ------- Отметка посещаемости -------

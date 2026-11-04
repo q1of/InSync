@@ -562,11 +562,6 @@ class TestAcsTimeline:
         rng = [mirea_client._parse_timestamp(v) for _, _, v in mirea_client._fields(fields[1][1])]
         assert rng == [self.T, self.T + 10]
 
-    def test_hours_double(self):
-        import struct
-        assert acs_mod.ACS_ENTER == 1
-        assert mirea_client._parse_acs_hours(b"\x08\x01\x11" + struct.pack("<d", 5.5)) == 5.5
-
     def test_user_id_from_me_info(self):
         raw = _pb(1, _pb(1, _pb(1, b"user-uuid") + _pb(2, "Иван".encode())))
         assert mirea_client._pulse_user_id(raw) == "user-uuid"

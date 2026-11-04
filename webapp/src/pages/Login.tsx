@@ -68,10 +68,19 @@ export function Login({ onLoginSuccess }: Props) {
   return (
     <div class="app-shell">
       <div class="screen screen-pad-top" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100vh' }}>
-        {/* Герой: знак «сигнала» + название */}
-        <div class="enter" style={{ textAlign: 'center', marginBottom: 36 }}>
-          <h1 style={{ fontSize: 34 }}>In<span class="sig-text">Sync</span></h1>
-          <p class="muted" style={{ marginTop: 8, fontSize: 15 }}>Отметка на парах — за себя и друзей, одним сканом</p>
+        {/* Герой: живой знак (как на сканере) + обещание продукта */}
+        <div class="enter" style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ position: 'relative', display: 'inline-block', marginBottom: 14 }}>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+              width: 220, height: 220, borderRadius: '50%', pointerEvents: 'none',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.10), transparent 62%)' }} />
+            <svg class="logo-mark" viewBox="0 0 100 100" style={{ width: 88, height: 88, position: 'relative' }}>
+              <polyline class="logo-base" points="18,52 38,68 60,34 82,50" pathLength="100" />
+              <polyline class="logo-trace" points="18,52 38,68 60,34 82,50" pathLength="100" />
+            </svg>
+          </div>
+          <div class="eyebrow" style={{ marginBottom: 12 }}>InSync</div>
+          <h1 style={{ fontSize: 28, lineHeight: 1.12 }}>Ты и друзья на паре<br /><span class="sig-text">одним сканом</span></h1>
         </div>
 
         {!needs2fa ? (

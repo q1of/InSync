@@ -97,15 +97,15 @@ async def pulse_user_id(telegram_id: int, cookies: dict) -> str | None:
 
 
 async def day_events(telegram_id: int, cookies: dict, day: date) -> dict:
-    """События турникетов за день и время в вузе. {"error": ...} при сбое Пульса."""
+    """События турникетов за день. {"error": ...} при сбое Пульса."""
     uid = await pulse_user_id(telegram_id, cookies)
     if not uid:
         return {"error": "Не удалось получить профиль Пульса"}
     start, end = day_bounds(day)
-    res = await get_acs_events(cookies, uid, start, end, with_hours=True)
+    res = await get_acs_events(cookies, uid, start, end)
     if res.get("error"):
         return res
-    return {"error": None, "hours": res["hours"], "events": [describe(e) for e in res["events"]]}
+    return {"error": None, "events": [describe(e) for e in res["events"]]}
 
 
 async def presence_warning(telegram_id: int, cookies: dict, room: str | None, building: str | None) -> str | None:

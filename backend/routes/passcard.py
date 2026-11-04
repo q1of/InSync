@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/pass", tags=["pass"])
 
 @router.get("/day")
 async def pass_day(day: str | None = None, user: TelegramUser = Depends(get_current_user)):
-    """События турникетов за день (по умолчанию сегодня) и время в вузе."""
+    """События турникетов за день (по умолчанию сегодня)."""
     try:
         target = date.fromisoformat(day) if day else today_msk()
     except ValueError:
@@ -24,4 +24,4 @@ async def pass_day(day: str | None = None, user: TelegramUser = Depends(get_curr
     if res.get("error"):
         status = 401 if is_session_expired(res["error"]) else 502
         raise HTTPException(status_code=status, detail=res["error"])
-    return {"day": target.isoformat(), "hours": res["hours"], "events": res["events"]}
+    return {"day": target.isoformat(), "events": res["events"]}
