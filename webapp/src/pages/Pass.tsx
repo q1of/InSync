@@ -20,7 +20,8 @@ function dayTitle(day: string, today: string): { tag: string; date: string } {
   return { tag: d.toLocaleDateString('ru-RU', { weekday: 'long', timeZone: 'UTC' }), date };
 }
 
-export function Pass() {
+// Лента проходов через турникеты — третий раздел вкладки «Пары».
+export function PassView() {
   const { haptic } = useTelegram();
   const today = isoDay(Date.now());
   const [day, setDay] = useState(today);
@@ -42,8 +43,7 @@ export function Pass() {
     color: 'var(--ink-dim)', display: 'grid', placeItems: 'center', cursor: 'pointer', flex: 'none' } as const;
 
   return (
-    <div class="screen screen-pad-top">
-      <h1 style={{ fontSize: 30, marginBottom: 22 }}>Пропуск</h1>
+    <div>
 
       {/* Переключение дней */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>

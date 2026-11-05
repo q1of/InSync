@@ -5,8 +5,11 @@ import {
 } from '../api/client';
 import { useTelegram } from '../hooks/useTelegram';
 import { IconUsers, IconMail, IconTrash, IconCheck, IconX, IconPlus } from '../components/icons';
+import { thumbStyle } from '../components/segment';
+import { GroupView } from './Group';
 
-interface Props { onPendingChange?: (n: number) => void; }
+// inviteCode — код группы из ссылки-приглашения: сразу открываем раздел «Группа».
+interface Props { onPendingChange?: (n: number) => void; inviteCode?: string | null; }
 
 function initials(name?: string | null) {
   if (!name) return 'U';
@@ -14,9 +17,9 @@ function initials(name?: string | null) {
   return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || 'U';
 }
 
-export function Friends({ onPendingChange }: Props) {
+export function Friends({ onPendingChange, inviteCode }: Props) {
   const { haptic, webApp } = useTelegram();
-  const [tab, setTab] = useState<'friends' | 'pending'>('friends');
+  const [tab, setTab] = useState<'friends' | 'group' | 'pending'>(inviteCode ? 'group' : 'friends');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pending, setPending] = useState<PendingReq[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,8 +64,9 @@ export function Friends({ onPendingChange }: Props) {
       <h1 style={{ fontSize: 30, marginBottom: 22 }}>Друзья</h1>
 
       <div class="segment" style={{ marginBottom: 20 }}>
-        <div class="thumb" style={{ left: tab === 'friends' ? 4 : '50%', width: 'calc(50% - 4px)' }} />
-        <button data-active={tab === 'friends'} onClick={() => setTab('friends')}>Мои друзья</button>
+        <div class="thumb" style={thumbStyle(['friends', 'group', 'pending'].indexOf(tab), 3)} />
+        <button data-active={tab === 'friends'} onClick={() => setTab('friends')}>Друзья</button>
+        <button data-active={tab === 'group'} onClick={() => setTab('group')}>Группа</button>
         <button data-active={tab === 'pending'} onClick={() => setTab('pending')}>
           Заявки{pending.length > 0 ? ` · ${pending.length}` : ''}
         </button>
@@ -99,6 +103,8 @@ export function Friends({ onPendingChange }: Props) {
           )}
         </div>
       )}
+
+      {tab === 'group' && <GroupView inviteCode={inviteCode} />}
 
       {tab === 'pending' && (
         <div class="enter">

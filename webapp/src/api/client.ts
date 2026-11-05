@@ -133,10 +133,13 @@ export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scan
 export interface MarkTarget { telegram_id: number; name: string; }
 export const getMarkTargetsApi = () => api<MarkTarget[]>('GET', '/attendance/targets');
 
-// Учебная группа: участники в InSync и тумблер «отмечаться с группой»
+// Группа: создаёт любой, остальные вступают по коду или ссылке; тумблер «отмечаться с группой»
 export interface GroupMember { telegram_id: number; name: string; is_self: boolean; enabled: boolean; session_alive: boolean; }
-export interface GroupInfo { group_name: string | null; enabled: boolean; members: GroupMember[]; }
-export const getGroupApi = () => api<GroupInfo>('GET', '/group');
+export interface GroupInfo { name: string; code: string; invite_link: string | null; enabled: boolean; members: GroupMember[]; }
+export const getGroupApi = () => api<{ group: GroupInfo | null }>('GET', '/group');
+export const createGroupApi = (name: string) => checked(api<{ success: boolean; error?: string; group: GroupInfo }>('POST', '/group/create', { name }));
+export const joinGroupApi = (code: string) => checked(api<{ success: boolean; error?: string; group: GroupInfo }>('POST', '/group/join', { code }));
+export const leaveGroupApi = () => api('POST', '/group/leave');
 export const setGroupMarkingApi = (enabled: boolean) => api('POST', '/group/marking', { enabled });
 
 // Пропуск: события турникетов за день

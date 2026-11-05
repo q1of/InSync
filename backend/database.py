@@ -1,4 +1,5 @@
 import os
+import secrets
 import aiosqlite
 from contextlib import asynccontextmanager
 from typing import Optional, List
@@ -47,7 +48,6 @@ async def init_db():
                 notif_marked INTEGER DEFAULT 1,   -- уведомлять об отметках на парах
                 notif_login INTEGER DEFAULT 1,    -- уведомлять о входе в аккаунт
                 notif_session INTEGER DEFAULT 1,  -- уведомлять о слёте сессии
-                group_marking INTEGER DEFAULT 0,  -- отмечаться с учебной группой (в обе стороны)
                 created_at INTEGER DEFAULT (unixepoch())
             );
         """)
@@ -92,6 +92,25 @@ async def init_db():
             );
         """)
 
+        # Группы: создаёт любой, остальные вступают по коду. Человек — максимум в одной группе.
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS study_groups(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                code TEXT NOT NULL UNIQUE,      -- код приглашения (и для ссылки в бота)
+                created_by INTEGER REFERENCES users(telegram_id),
+                created_at INTEGER DEFAULT (unixepoch())
+            );
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS group_members(
+                telegram_id INTEGER PRIMARY KEY REFERENCES users(telegram_id),
+                group_id INTEGER NOT NULL REFERENCES study_groups(id),
+                marking INTEGER DEFAULT 1,      -- отмечаться с группой (в обе стороны)
+                joined_at INTEGER DEFAULT (unixepoch())
+            );
+        """)
+
         # Миграция старых БД: добавить marking_enabled, если его нет
         async with db.execute("PRAGMA table_info(friendships)") as cur:
             cols = [r["name"] for r in await cur.fetchall()]
@@ -105,8 +124,6 @@ async def init_db():
         for col in ("notif_marked", "notif_login", "notif_session"):
             if col not in ucols:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 1")
-        if "group_marking" not in ucols:
-            await db.execute("ALTER TABLE users ADD COLUMN group_marking INTEGER DEFAULT 0")
 
         async with db.execute("PRAGMA table_info(attendance_log)") as cur:
             acols = [r["name"] for r in await cur.fetchall()]
@@ -127,7 +144,7 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_initiator ON attendance_log(initiator, scan_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_target ON attendance_log(target_user, created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_optout_user ON lesson_optout(telegram_id, start_epoch)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_group ON users(group_name)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_group_members ON group_members(group_id)")
 
         await db.commit()
 
@@ -268,10 +285,10 @@ async def notif_enabled(telegram_id: int, key: str) -> bool:
 
 
 async def mark_targets(telegram_id: int) -> List[aiosqlite.Row]:
-    """Кого отмечает скан пользователя: друзья с включённой отметкой и учебная группа.
+    """Кого отмечает скан пользователя: друзья с включённой отметкой и его группа.
 
-    Группа — все с той же group_name, если тумблер «отмечаться с группой» включён
-    и у сканирующего, и у них. UNION убирает тех, кто и друг, и одногруппник.
+    Группа — все её участники, если тумблер «отмечаться с группой» включён и у
+    сканирующего, и у них. UNION убирает тех, кто и друг, и в группе.
     """
     async with get_db() as db:
         async with db.execute(
@@ -280,41 +297,107 @@ async def mark_targets(telegram_id: int) -> List[aiosqlite.Row]:
                WHERE f.user_id = ? AND f.status = 'accepted' AND f.marking_enabled = 1
                UNION
                SELECT u.telegram_id, u.display_name, u.encrypted_session, u.session_valid
-               FROM users me JOIN users u ON u.group_name = me.group_name AND u.telegram_id != me.telegram_id
-               WHERE me.telegram_id = ? AND me.group_marking = 1 AND u.group_marking = 1
+               FROM group_members me
+               JOIN group_members m ON m.group_id = me.group_id AND m.telegram_id != me.telegram_id
+               JOIN users u ON u.telegram_id = m.telegram_id
+               WHERE me.telegram_id = ? AND me.marking = 1 AND m.marking = 1
                ORDER BY 2 COLLATE NOCASE""",
             (telegram_id, telegram_id),
         ) as cur:
             return await cur.fetchall()
 
 
-async def get_group(telegram_id: int) -> dict:
-    """Учебная группа пользователя, его тумблер и все участники группы в InSync."""
+GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # без похожих O/0 и I/1
+GROUP_NAME_MAX = 40
+
+
+async def get_group(telegram_id: int) -> Optional[dict]:
+    """Группа пользователя с участниками, или None, если он ни в одной не состоит."""
     async with get_db() as db:
         async with db.execute(
-            "SELECT group_name, group_marking FROM users WHERE telegram_id = ?", (telegram_id,),
+            """SELECT g.id, g.name, g.code, m.marking FROM group_members m
+               JOIN study_groups g ON g.id = m.group_id WHERE m.telegram_id = ?""",
+            (telegram_id,),
         ) as cur:
             me = await cur.fetchone()
-        if not me or not me["group_name"]:
-            return {"group_name": None, "enabled": False, "members": []}
+        if not me:
+            return None
         async with db.execute(
-            """SELECT telegram_id, display_name, session_valid, group_marking FROM users
-               WHERE group_name = ? ORDER BY group_marking DESC, display_name COLLATE NOCASE""",
-            (me["group_name"],),
+            """SELECT u.telegram_id, u.display_name, u.session_valid, m.marking
+               FROM group_members m JOIN users u ON u.telegram_id = m.telegram_id
+               WHERE m.group_id = ? ORDER BY m.marking DESC, u.display_name COLLATE NOCASE""",
+            (me["id"],),
         ) as cur:
             rows = await cur.fetchall()
     return {
-        "group_name": me["group_name"],
-        "enabled": bool(me["group_marking"]),
+        "name": me["name"], "code": me["code"], "enabled": bool(me["marking"]),
         "members": [{"telegram_id": r["telegram_id"], "name": r["display_name"],
-                     "is_self": r["telegram_id"] == telegram_id, "enabled": bool(r["group_marking"]),
+                     "is_self": r["telegram_id"] == telegram_id, "enabled": bool(r["marking"]),
                      "session_alive": bool(r["session_valid"])} for r in rows],
     }
 
 
+async def create_group(telegram_id: int, name: str) -> Optional[str]:
+    """Создаёт группу и вступает в неё. Ошибка текстом (или None, если всё хорошо)."""
+    name = " ".join((name or "").split())[:GROUP_NAME_MAX]
+    if not name:
+        return "Придумай название группы"
+    async with get_db() as db:
+        async with db.execute("SELECT 1 FROM group_members WHERE telegram_id = ?", (telegram_id,)) as cur:
+            if await cur.fetchone():
+                return "Ты уже в группе — сначала выйди из неё"
+        for _ in range(10):
+            code = "".join(secrets.choice(GROUP_CODE_ALPHABET) for _ in range(6))
+            try:
+                cur = await db.execute(
+                    "INSERT INTO study_groups (name, code, created_by) VALUES (?, ?, ?)",
+                    (name, code, telegram_id))
+                break
+            except aiosqlite.IntegrityError:
+                continue   # такой код уже занят — берём другой
+        else:
+            return "Не удалось создать группу, попробуй ещё раз"
+        await db.execute("INSERT INTO group_members (telegram_id, group_id) VALUES (?, ?)",
+                         (telegram_id, cur.lastrowid))
+        await db.commit()
+    return None
+
+
+async def join_group(telegram_id: int, code: str) -> Optional[str]:
+    """Вступление по коду. Ошибка текстом (или None)."""
+    code = (code or "").strip().upper()
+    async with get_db() as db:
+        async with db.execute("SELECT id FROM study_groups WHERE code = ?", (code,)) as cur:
+            group = await cur.fetchone()
+        if not group:
+            return "Группа с таким кодом не найдена"
+        async with db.execute("SELECT group_id FROM group_members WHERE telegram_id = ?", (telegram_id,)) as cur:
+            current = await cur.fetchone()
+        if current:
+            return None if current["group_id"] == group["id"] else "Ты уже в другой группе — сначала выйди из неё"
+        await db.execute("INSERT INTO group_members (telegram_id, group_id) VALUES (?, ?)",
+                         (telegram_id, group["id"]))
+        await db.commit()
+    return None
+
+
+async def leave_group(telegram_id: int) -> None:
+    """Выход из группы. Опустевшую группу удаляем — её код больше не нужен."""
+    async with get_db() as db:
+        async with db.execute("SELECT group_id FROM group_members WHERE telegram_id = ?", (telegram_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return
+        await db.execute("DELETE FROM group_members WHERE telegram_id = ?", (telegram_id,))
+        await db.execute(
+            "DELETE FROM study_groups WHERE id = ? AND NOT EXISTS "
+            "(SELECT 1 FROM group_members WHERE group_id = ?)", (row["group_id"], row["group_id"]))
+        await db.commit()
+
+
 async def set_group_marking(telegram_id: int, enabled: bool) -> None:
     async with get_db() as db:
-        await db.execute("UPDATE users SET group_marking = ? WHERE telegram_id = ?",
+        await db.execute("UPDATE group_members SET marking = ? WHERE telegram_id = ?",
                          (1 if enabled else 0, telegram_id))
         await db.commit()
 

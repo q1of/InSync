@@ -626,47 +626,65 @@ class TestPresence:
         assert asyncio.run(acs_mod.presence_warning(1, {}, "А-213", "В-78")) is None
 
 
-class TestGroupTargets:
+class TestGroups:
     @pytest.fixture
     def db(self, tmp_path, monkeypatch):
         monkeypatch.setattr(database.settings, "database_path", str(tmp_path / "g.db"))
 
         async def prepare():
             await database.init_db()
-            for tid, name, group in [(1, "Я", "ИКБО-01-23"), (2, "Одногруппник", "ИКБО-01-23"),
-                                     (3, "Не включил", "ИКБО-01-23"), (4, "Друг", "ИКБО-02-23"),
-                                     (5, "Чужой", "ИКБО-02-23")]:
-                await database.upsert_user(tid, name, group_name=group)
-            for tid in (1, 2, 5):
-                await database.set_group_marking(tid, True)
+            for tid, name in [(1, "Я"), (2, "Одногруппник"), (3, "Выключил"), (4, "Друг"), (5, "Чужой")]:
+                await database.upsert_user(tid, name)
+            assert await database.create_group(1, "  ИКБО   01 ") is None
+            code = (await database.get_group(1))["code"]
+            for tid in (2, 3):
+                assert await database.join_group(tid, code.lower()) is None
+            await database.set_group_marking(3, False)
             async with database.get_db() as conn:
                 await conn.execute("INSERT INTO friendships (user_id, friend_id, status) VALUES (1, 4, 'accepted')")
                 await conn.execute("INSERT INTO friendships (user_id, friend_id, status) VALUES (1, 2, 'accepted')")
                 await conn.commit()
+            return code
 
-        asyncio.run(prepare())
+        return asyncio.run(prepare())
 
     def targets(self, tid):
         return sorted(r["telegram_id"] for r in asyncio.run(database.mark_targets(tid)))
 
     def test_friends_and_group_with_toggle_on(self, db):
-        # 2 — и друг, и одногруппник: один раз; 3 не включил тумблер; 5 — другая группа.
+        # 2 — и друг, и в группе: один раз; 3 выключил тумблер; 5 не в группе.
         assert self.targets(1) == [2, 4]
+        assert self.targets(2) == [1]
 
     def test_toggle_off_means_no_group(self, db):
         asyncio.run(database.set_group_marking(1, False))
         assert self.targets(1) == [2, 4]   # остаются только друзья
         assert self.targets(2) == []       # и группа больше не отмечает пользователя 1
 
-    def test_group_list(self, db):
+    def test_group_view(self, db):
         g = asyncio.run(database.get_group(1))
-        assert g["group_name"] == "ИКБО-01-23" and g["enabled"] is True
+        assert (g["name"], g["code"], g["enabled"]) == ("ИКБО 01", db, True)
+        assert len(db) == 6 and set(db) <= set(database.GROUP_CODE_ALPHABET)
         assert [(m["telegram_id"], m["enabled"], m["is_self"]) for m in g["members"]] == [
             (2, True, False), (1, True, True), (3, False, False)]
+        assert asyncio.run(database.get_group(5)) is None
 
-    def test_no_group_name(self, db):
-        asyncio.run(database.upsert_user(9, "Без группы"))
-        assert asyncio.run(database.get_group(9)) == {"group_name": None, "enabled": False, "members": []}
+    def test_one_group_per_person(self, db):
+        assert asyncio.run(database.create_group(1, "Ещё одна")) is not None
+        assert asyncio.run(database.create_group(5, "Своя")) is None
+        assert asyncio.run(database.join_group(5, db)) is not None
+        assert asyncio.run(database.join_group(2, db)) is None   # повторное вступление в свою — не ошибка
+
+    def test_bad_code_and_empty_name(self, db):
+        assert asyncio.run(database.join_group(5, "NOPE00")) is not None
+        assert asyncio.run(database.create_group(5, "   ")) is not None
+
+    def test_last_member_leaving_deletes_group(self, db):
+        for tid in (1, 2):
+            asyncio.run(database.leave_group(tid))
+        assert self.targets(2) == []
+        asyncio.run(database.leave_group(3))
+        assert asyncio.run(database.join_group(5, db)) is not None
 
 
 def test_non_uuid_lesson_id_is_ignored():

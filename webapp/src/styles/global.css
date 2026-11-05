@@ -275,7 +275,7 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
   border-radius: 999px; position: relative;
 }
 .segment button {
-  flex: 1; padding: 11px; border: none; background: none; cursor: pointer;
+  flex: 1; min-width: 0; padding: 11px 4px; white-space: nowrap; border: none; background: none; cursor: pointer;
   color: var(--ink-dim); font-weight: 600; font-size: 14px; font-family: inherit;
   border-radius: 999px; z-index: 1; transition: color 0.25s ease;
 }
@@ -304,15 +304,16 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 .logo-mark polyline { fill: none; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
 .logo-mark .logo-base { stroke: var(--ink); opacity: 0.26; }
 .logo-mark .logo-trace {
-  stroke: var(--ink); stroke-dasharray: 26 200;
-  animation: logoTrace 2.6s ease-in-out infinite;   /* без drop-shadow — дешевле для слабых телефонов */
+  stroke: var(--ink); stroke-dasharray: 26 100;
+  animation: logoTrace 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;   /* без drop-shadow — дешевле для слабых телефонов */
 }
-/* Штрих всегда целиком на линии: проявляется в начале и гаснет у конца, не обрезаясь краем. */
+/* Штрих въезжает в линию из-за начала и целиком уходит за конец; на краях мягко
+   проявляется и гаснет, чтобы круглый кончик не исчезал рывком. */
 @keyframes logoTrace {
-  0%   { stroke-dashoffset: 0;   opacity: 0; }
-  18%  { opacity: 1; }
-  82%  { opacity: 1; }
-  100% { stroke-dashoffset: -74; opacity: 0; }
+  0%   { stroke-dashoffset: 26;   opacity: 0; }
+  10%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { stroke-dashoffset: -100; opacity: 0; }
 }
 
 /* рамка-уголки для камеры на ПК — как в нативном сканере Telegram */

@@ -6,11 +6,10 @@ import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { Friends } from './pages/Friends';
 import { Lessons } from './pages/Lessons';
-import { Pass } from './pages/Pass';
-import { Group } from './pages/Group';
-import { IconScan, IconUsers, IconCalendar, IconUser, IconPass, IconGroup } from './components/icons';
+import { IconScan, IconUsers, IconCalendar, IconUser } from './components/icons';
 
-type Tab = 'scanner' | 'lessons' | 'pass' | 'group' | 'friends' | 'profile';
+// «Пропуск» живёт внутри «Пар», «Группа» — внутри «Друзей»: снизу только четыре вкладки.
+type Tab = 'scanner' | 'lessons' | 'friends' | 'profile';
 
 const BOOT_ATTEMPTS = 3;
 const BOOT_TIMEOUT_MS = 6000;
@@ -19,14 +18,23 @@ const BOOT_RETRY_DELAY_MS = 1500;
 const TABS: { id: Tab; label: string; Icon: any }[] = [
   { id: 'scanner', label: 'Сканер', Icon: IconScan },
   { id: 'lessons', label: 'Пары', Icon: IconCalendar },
-  { id: 'pass', label: 'Пропуск', Icon: IconPass },
-  { id: 'group', label: 'Группа', Icon: IconGroup },
   { id: 'friends', label: 'Друзья', Icon: IconUsers },
   { id: 'profile', label: 'Профиль', Icon: IconUser },
 ];
 
+// Код группы из ссылки-приглашения t.me/<бот>?startapp=g<КОД>.
+function inviteFromLaunch(): string | null {
+  let param: string | null = (window as any).Telegram?.WebApp?.initDataUnsafe?.start_param || null;
+  try {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    param = param || hash.get('tgWebAppStartParam') || new URLSearchParams(hash.get('tgWebAppData') || '').get('start_param');
+  } catch {}
+  return param && /^g[A-Za-z0-9]{6}$/.test(param) ? param.slice(1).toUpperCase() : null;
+}
+
 export function App() {
-  const [tab, setTab] = useState<Tab>('scanner');
+  const [inviteCode] = useState(inviteFromLaunch);
+  const [tab, setTab] = useState<Tab>(inviteCode ? 'friends' : 'scanner');
   const [initializing, setInit] = useState(true);
   const [hasSession, setHasSession] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -97,9 +105,7 @@ export function App() {
       {tab !== 'scanner' && (
         <div key={tab} class="enter" style={{ flex: 1 }}>
           {tab === 'lessons' && <Lessons />}
-          {tab === 'pass' && <Pass />}
-          {tab === 'group' && <Group />}
-          {tab === 'friends' && <Friends onPendingChange={setPendingCount} />}
+          {tab === 'friends' && <Friends onPendingChange={setPendingCount} inviteCode={inviteCode} />}
           {tab === 'profile' && <Profile onLogout={() => { setHasSession(false); setTab('scanner'); }} />}
         </div>
       )}

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getGroupApi, setGroupMarkingApi, GroupInfo, GroupMember } from '../api/client';
+import {
+  getGroupApi, createGroupApi, joinGroupApi, leaveGroupApi, setGroupMarkingApi, GroupInfo, GroupMember,
+} from '../api/client';
 import { IconGroup } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
@@ -21,12 +23,34 @@ function memberNote(m: GroupMember): string {
   return m.session_alive ? 'отмечается с группой' : 'нужно перезайти в InSync';
 }
 
-export function Group() {
-  const { haptic } = useTelegram();
-  const [group, setGroup] = useState<GroupInfo | null>(null);
-  const [error, setError] = useState(false);
+interface Props { inviteCode?: string | null }
 
-  useEffect(() => { getGroupApi().then(setGroup).catch(() => setError(true)); }, []);
+// Группа — раздел вкладки «Друзья». inviteCode приходит из ссылки-приглашения.
+export function GroupView({ inviteCode }: Props) {
+  const { haptic, webApp } = useTelegram();
+  const [group, setGroup] = useState<GroupInfo | null | undefined>(undefined);
+  const [loadError, setLoadError] = useState(false);
+  const [code, setCode] = useState(inviteCode || '');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+
+  useEffect(() => { getGroupApi().then((r) => setGroup(r.group)).catch(() => setLoadError(true)); }, []);
+
+  const flash = (text: string) => { setToast(text); setTimeout(() => setToast(''), 2200); };
+
+  const run = async (action: () => Promise<{ group: GroupInfo }>) => {
+    setError(''); setBusy(true);
+    try {
+      const res = await action();
+      haptic?.notificationOccurred?.('success');
+      setGroup(res.group);
+    } catch (e: any) {
+      haptic?.notificationOccurred?.('error');
+      setError(e?.message || 'Не получилось');
+    } finally { setBusy(false); }
+  };
 
   const toggle = async () => {
     if (!group) return;
@@ -39,24 +63,88 @@ export function Group() {
     try { await setGroupMarkingApi(next); } catch { apply(!next); }
   };
 
-  if (error) return <Screen><Empty title="Не удалось загрузить группу" sub="Попробуй открыть вкладку ещё раз" /></Screen>;
-  if (!group) return <Screen><div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div></Screen>;
-  if (!group.group_name) {
-    return <Screen><Empty title="Группа не найдена" sub="Мы берём её из профиля Пульса. Выйди и войди заново — она подтянется." /></Screen>;
+  const invite = () => {
+    if (!group) return;
+    haptic?.impactOccurred?.('light');
+    if (group.invite_link && webApp?.openTelegramLink) {
+      const text = `Вступай в группу «${group.name}» в InSync — будем отмечаться на парах вместе`;
+      webApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(group.invite_link)}&text=${encodeURIComponent(text)}`);
+      return;
+    }
+    navigator.clipboard?.writeText(group.code).then(() => flash('Код скопирован')).catch(() => flash(`Код группы: ${group.code}`));
+  };
+
+  const leave = async () => {
+    if (!group) return;
+    const ok = await new Promise<boolean>((resolve) => {
+      const text = `Выйти из группы «${group.name}»? Вы перестанете отмечать друг друга.`;
+      if (webApp?.showConfirm) webApp.showConfirm(text, resolve); else resolve(window.confirm(text));
+    });
+    if (!ok) return;
+    try { await leaveGroupApi(); setGroup(null); setCode(''); } catch { flash('Не удалось выйти, попробуй ещё раз'); }
+  };
+
+  if (loadError) return <Empty title="Не удалось загрузить группу" sub="Попробуй открыть раздел ещё раз" />;
+  if (group === undefined) return <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>;
+
+  // Не в группе: вступить по коду (или по приглашению) либо создать свою
+  if (!group) {
+    return (
+      <div class="enter" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ textAlign: 'center', padding: '6px 10px 4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><IconGroup size={40} color="var(--ink-faint)" /></div>
+          <p class="muted" style={{ fontSize: 14, lineHeight: 1.45 }}>
+            Собери свою группу: один тумблер — и вы отмечаете друг друга без заявок в друзья
+          </p>
+        </div>
+
+        <form class="panel" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); run(() => joinGroupApi(code)); }}>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>{inviteCode ? 'Тебя пригласили в группу' : 'Вступить по коду'}</div>
+          <div class="faint" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 12 }}>Код из 6 символов — его покажет тот, кто создал группу</div>
+          <div class="row">
+            <input class="field" placeholder="Например, K7QM2X" value={code} maxLength={6}
+              style={{ textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600 }}
+              onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())} />
+            <button class="btn" type="submit" disabled={busy || code.trim().length < 6} style={{ width: 'auto', flex: 'none', padding: '0 18px', height: 54 }}>Вступить</button>
+          </div>
+        </form>
+
+        <form class="panel" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); run(() => createGroupApi(name)); }}>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>Создать группу</div>
+          <div class="faint" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 12 }}>Потом позовёшь остальных по ссылке</div>
+          <div class="row">
+            <input class="field" placeholder="Название, например ИКБО-01-23" value={name} maxLength={40}
+              onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+            <button class="btn" type="submit" disabled={busy || !name.trim()} style={{ width: 'auto', flex: 'none', padding: '0 18px', height: 54 }}>Создать</button>
+          </div>
+        </form>
+
+        {error && <div style={{ color: 'var(--fail)', fontSize: 13, textAlign: 'center' }}>{error}</div>}
+      </div>
+    );
   }
 
   const total = group.members.length;
   const together = group.members.filter((m) => m.enabled).length;
 
   return (
-    <Screen>
-      {/* Карточка группы: название, сколько нас и главный тумблер */}
-      <div class="panel enter" style={{ padding: 18, marginBottom: 22 }}>
-        <div class="eyebrow">Учебная группа</div>
-        <div style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 24, marginTop: 8 }}>{group.group_name}</div>
-        <div class="faint" style={{ fontSize: 13, marginTop: 6 }}>
-          {total} {plural(total, 'человек', 'человека', 'человек')} в InSync · {together} {plural(together, 'отмечается', 'отмечаются', 'отмечаются')} вместе
+    <div class="enter">
+      {/* Карточка группы: название, код, приглашение и главный тумблер */}
+      <div class="panel" style={{ padding: 18, marginBottom: 22 }}>
+        <div class="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ minWidth: 0 }}>
+            <div class="eyebrow">Группа</div>
+            <div style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 22, marginTop: 8, overflowWrap: 'anywhere' }}>{group.name}</div>
+          </div>
+          <button class="tap" onClick={invite} style={{ flex: 'none', padding: '8px 12px', borderRadius: 999, border: '1px solid var(--hairline-2)',
+            background: 'none', color: 'var(--ink)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', cursor: 'pointer' }}>
+            {group.code}
+          </button>
         </div>
+        <div class="faint" style={{ fontSize: 13, marginTop: 6 }}>
+          {total} {plural(total, 'участник', 'участника', 'участников')} · {together} {plural(together, 'отмечается', 'отмечаются', 'отмечаются')} вместе
+        </div>
+        <button class="btn" onClick={invite} style={{ marginTop: 16 }}>Пригласить в группу</button>
         <div style={{ height: 1, background: 'var(--hairline)', margin: '16px 0' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{ flex: 1 }}>
@@ -69,38 +157,44 @@ export function Group() {
         </div>
       </div>
 
-      {total <= 1 ? (
-        <Empty title="Пока здесь только ты" sub="Позови одногруппников в InSync — они появятся здесь сами, без заявок" />
-      ) : (
-        <>
-          <div class="muted" style={{ fontSize: 13, marginBottom: 12 }}>Участники</div>
-          <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {group.members.map((m) => (
-              <div key={m.telegram_id} class="panel" style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12, opacity: m.enabled ? 1 : 0.55 }}>
-                <div class="avatar" style={{ width: 44, height: 44, fontSize: 15, flex: 'none' }}>{initials(m.name)}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {m.name}{m.is_self && <span class="faint" style={{ fontWeight: 500 }}> · ты</span>}
-                  </div>
-                  <div class="faint" style={{ fontSize: 13, marginTop: 2 }}>{memberNote(m)}</div>
-                </div>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', flex: 'none',
-                  background: m.enabled && m.session_alive ? 'var(--live)' : m.enabled ? 'var(--fail)' : 'var(--hairline-2)',
-                  boxShadow: m.enabled && m.session_alive ? '0 0 10px rgba(255,255,255,0.45)' : 'none' }} />
-              </div>
-            ))}
-          </div>
-        </>
+      {inviteCode && inviteCode !== group.code && (
+        <div class="faint" style={{ fontSize: 13, marginBottom: 14, textAlign: 'center' }}>
+          Тебя пригласили в другую группу — чтобы вступить, сначала выйди из этой
+        </div>
       )}
-    </Screen>
-  );
-}
 
-function Screen({ children }: { children: any }) {
-  return (
-    <div class="screen screen-pad-top">
-      <h1 style={{ fontSize: 30, marginBottom: 22 }}>Группа</h1>
-      {children}
+      <div class="muted" style={{ fontSize: 13, marginBottom: 12 }}>Участники</div>
+      <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {group.members.map((m) => (
+          <div key={m.telegram_id} class="panel" style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12, opacity: m.enabled ? 1 : 0.55 }}>
+            <div class="avatar" style={{ width: 44, height: 44, fontSize: 15, flex: 'none' }}>{initials(m.name)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {m.name}{m.is_self && <span class="faint" style={{ fontWeight: 500 }}> · ты</span>}
+              </div>
+              <div class="faint" style={{ fontSize: 13, marginTop: 2 }}>{memberNote(m)}</div>
+            </div>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', flex: 'none',
+              background: m.enabled && m.session_alive ? 'var(--live)' : m.enabled ? 'var(--fail)' : 'var(--hairline-2)',
+              boxShadow: m.enabled && m.session_alive ? '0 0 10px rgba(255,255,255,0.45)' : 'none' }} />
+          </div>
+        ))}
+      </div>
+
+      {total <= 1 && (
+        <p class="faint" style={{ fontSize: 13, textAlign: 'center', marginTop: 14 }}>Пока здесь только ты — позови остальных по ссылке</p>
+      )}
+
+      <button onClick={leave} style={{ display: 'block', margin: '22px auto 4px', background: 'none', border: 'none',
+        color: 'var(--ink-faint)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Выйти из группы</button>
+
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 'calc(var(--tab-h) + 18px)', left: 20, right: 20, maxWidth: 480, margin: '0 auto',
+          padding: '13px 16px', borderRadius: 'var(--r-md)', textAlign: 'center', fontWeight: 600, zIndex: 150,
+          background: 'var(--bg-2)', color: 'var(--ink)', border: '1px solid var(--hairline-2)', animation: 'enter 0.3s both' }}>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
