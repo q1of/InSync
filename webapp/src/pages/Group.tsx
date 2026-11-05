@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import {
   getGroupApi, createGroupApi, joinGroupApi, leaveGroupApi, setGroupMarkingApi, GroupInfo, GroupMember,
 } from '../api/client';
-import { IconGroup } from '../components/icons';
+import { IconCheck, IconGroup } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
 function initials(name?: string | null) {
@@ -38,6 +38,7 @@ export function GroupView({ inviteCode }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [copied, setCopied] = useState(false);   // кнопка с кодом на миг показывает «Скопировано»
 
   useEffect(() => { getGroupApi().then((r) => setGroup(r.group)).catch(() => setLoadError(true)); }, []);
 
@@ -81,21 +82,24 @@ export function GroupView({ inviteCode }: Props) {
   // тогда копируем через скрытое поле, а если и это не вышло, просто показываем код.
   const copyCode = async () => {
     if (!group) return;
-    haptic?.impactOccurred?.('light');
+    let ok = false;
     try {
       await navigator.clipboard.writeText(group.code);
-      flash('Код скопирован');
-      return;
-    } catch {}
-    const field = document.createElement('textarea');
-    field.value = group.code;
-    field.setAttribute('readonly', '');
-    field.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
-    document.body.appendChild(field);
-    field.select();
-    const ok = document.execCommand('copy');
-    field.remove();
-    flash(ok ? 'Код скопирован' : `Код группы: ${group.code}`);
+      ok = true;
+    } catch {
+      const field = document.createElement('textarea');
+      field.value = group.code;
+      field.setAttribute('readonly', '');
+      field.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(field);
+      field.select();
+      ok = document.execCommand('copy');
+      field.remove();
+    }
+    if (!ok) { flash(`Код группы: ${group.code}`); return; }
+    haptic?.notificationOccurred?.('success');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
   };
 
   const leave = async () => {
@@ -161,9 +165,12 @@ export function GroupView({ inviteCode }: Props) {
             <div class="eyebrow">Группа</div>
             <div style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 22, marginTop: 8, overflowWrap: 'anywhere' }}>{group.name}</div>
           </div>
-          <button class="tap" onClick={copyCode} title="Скопировать код" style={{ flex: 'none', padding: '8px 12px', borderRadius: 999, border: '1px solid var(--hairline-2)',
-            background: 'none', color: 'var(--ink)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', cursor: 'pointer' }}>
-            {group.code}
+          <button class="tap" onClick={copyCode} title="Скопировать код" style={{ flex: 'none', padding: '8px 12px', borderRadius: 999,
+            border: `1px solid ${copied ? 'var(--ink)' : 'var(--hairline-2)'}`, background: copied ? 'var(--ink)' : 'none',
+            color: copied ? '#09090B' : 'var(--ink)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13,
+            letterSpacing: '0.08em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            transition: 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease' }}>
+            {copied ? <><IconCheck size={14} stroke={3} /> Скопировано</> : group.code}
           </button>
         </div>
         <div class="faint" style={{ fontSize: 13, marginTop: 6 }}>
