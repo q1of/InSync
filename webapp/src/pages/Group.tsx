@@ -25,6 +25,9 @@ function memberNote(m: GroupMember): string {
 
 interface Props { inviteCode?: string | null }
 
+// Одинаковая ширина кнопок «Вступить» и «Создать» — и поля рядом с ними одной ширины.
+const actionBtn = { width: 100, flex: 'none', padding: 0, height: 54 } as const;
+
 // Группа — раздел вкладки «Друзья». inviteCode приходит из ссылки-приглашения.
 export function GroupView({ inviteCode }: Props) {
   const { haptic, webApp } = useTelegram();
@@ -102,10 +105,11 @@ export function GroupView({ inviteCode }: Props) {
           <div style={{ fontWeight: 600, fontSize: 15 }}>{inviteCode ? 'Тебя пригласили в группу' : 'Вступить по коду'}</div>
           <div class="faint" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 12 }}>Код из 6 символов — его покажет тот, кто создал группу</div>
           <div class="row">
-            <input class="field" placeholder="Например, K7QM2X" value={code} maxLength={6}
-              style={{ textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600 }}
+            {/* Разрядка — только у введённого кода: подсказка выглядит как в соседнем поле */}
+            <input class="field" placeholder="Код группы" value={code} maxLength={6}
+              style={code ? { letterSpacing: '0.12em', fontWeight: 600 } : undefined}
               onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())} />
-            <button class="btn" type="submit" disabled={busy || code.trim().length < 6} style={{ width: 'auto', flex: 'none', padding: '0 18px', height: 54 }}>Вступить</button>
+            <button class="btn" type="submit" disabled={busy || code.trim().length < 6} style={actionBtn}>Вступить</button>
           </div>
         </form>
 
@@ -113,9 +117,9 @@ export function GroupView({ inviteCode }: Props) {
           <div style={{ fontWeight: 600, fontSize: 15 }}>Создать группу</div>
           <div class="faint" style={{ fontSize: 12.5, marginTop: 4, marginBottom: 12 }}>Потом позовёшь остальных по ссылке</div>
           <div class="row">
-            <input class="field" placeholder="Название, например ИКБО-01-23" value={name} maxLength={40}
+            <input class="field" placeholder="Название группы" value={name} maxLength={40}
               onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-            <button class="btn" type="submit" disabled={busy || !name.trim()} style={{ width: 'auto', flex: 'none', padding: '0 18px', height: 54 }}>Создать</button>
+            <button class="btn" type="submit" disabled={busy || !name.trim()} style={actionBtn}>Создать</button>
           </div>
         </form>
 

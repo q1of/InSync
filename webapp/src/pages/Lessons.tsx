@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getScheduleApi, getOptoutsApi, setOptoutApi, Lesson } from '../api/client';
 import { HistoryList } from './History';
-import { PassView } from './Pass';
 import { thumbStyle } from '../components/segment';
 import { useTelegram } from '../hooks/useTelegram';
 import { IconCalendar } from '../components/icons';
@@ -43,7 +42,7 @@ function buildDays(lessons: Lesson[]): Day[] {
 
 export function Lessons() {
   const { haptic } = useTelegram();
-  const [tab, setTab] = useState<'schedule' | 'history' | 'pass'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'history'>('schedule');
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [off, setOff] = useState<Set<number>>(new Set());
 
@@ -74,10 +73,9 @@ export function Lessons() {
       <h1 style={{ fontSize: 30, marginBottom: 22 }}>Пары</h1>
 
       <div class="segment" style={{ marginBottom: 24 }}>
-        <div class="thumb" style={thumbStyle(['schedule', 'history', 'pass'].indexOf(tab), 3)} />
+        <div class="thumb" style={thumbStyle(tab === 'schedule' ? 0 : 1, 2)} />
         <button data-active={tab === 'schedule'} onClick={() => setTab('schedule')}>Расписание</button>
         <button data-active={tab === 'history'} onClick={() => setTab('history')}>История</button>
-        <button data-active={tab === 'pass'} onClick={() => setTab('pass')}>Пропуск</button>
       </div>
 
       {tab === 'schedule' && (
@@ -101,8 +99,6 @@ export function Lessons() {
       {tab === 'history' && (
         <div class="enter"><HistoryList /></div>
       )}
-
-      {tab === 'pass' && <PassView />}
     </div>
   );
 }

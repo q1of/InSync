@@ -6,10 +6,11 @@ import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { Friends } from './pages/Friends';
 import { Lessons } from './pages/Lessons';
-import { IconScan, IconUsers, IconCalendar, IconUser } from './components/icons';
+import { Pass } from './pages/Pass';
+import { IconScan, IconUsers, IconCalendar, IconUser, IconPass } from './components/icons';
 
-// «Пропуск» живёт внутри «Пар», «Группа» — внутри «Друзей»: снизу только четыре вкладки.
-type Tab = 'scanner' | 'lessons' | 'friends' | 'profile';
+// «Группа» живёт внутри «Друзей», чтобы снизу было не больше пяти вкладок.
+type Tab = 'scanner' | 'lessons' | 'pass' | 'friends' | 'profile';
 
 const BOOT_ATTEMPTS = 3;
 const BOOT_TIMEOUT_MS = 6000;
@@ -18,6 +19,7 @@ const BOOT_RETRY_DELAY_MS = 1500;
 const TABS: { id: Tab; label: string; Icon: any }[] = [
   { id: 'scanner', label: 'Сканер', Icon: IconScan },
   { id: 'lessons', label: 'Пары', Icon: IconCalendar },
+  { id: 'pass', label: 'Пропуск', Icon: IconPass },
   { id: 'friends', label: 'Друзья', Icon: IconUsers },
   { id: 'profile', label: 'Профиль', Icon: IconUser },
 ];
@@ -105,6 +107,7 @@ export function App() {
       {tab !== 'scanner' && (
         <div key={tab} class="enter" style={{ flex: 1 }}>
           {tab === 'lessons' && <Lessons />}
+          {tab === 'pass' && <Pass />}
           {tab === 'friends' && <Friends onPendingChange={setPendingCount} inviteCode={inviteCode} />}
           {tab === 'profile' && <Profile onLogout={() => { setHasSession(false); setTab('scanner'); }} />}
         </div>

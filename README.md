@@ -47,7 +47,7 @@ InSync/
 │  └─ src/
 │     ├─ api/client.ts       #   обёртка над /api (шлёт X-Telegram-Init-Data)
 │     ├─ hooks/useTelegram.ts#   доступ к Telegram WebApp SDK
-│     ├─ pages/              #   Scanner, Lessons (+ Pass), Friends (+ Group), Profile, Login
+│     ├─ pages/              #   Scanner, Lessons, Pass, Friends (+ Group), Profile, Login
 │     │                      #     (History встроена во вкладку Lessons)
 │     ├─ components/icons.tsx
 │     └─ styles/global.css
@@ -57,8 +57,8 @@ InSync/
 └─ .gitignore
 ```
 
-Вкладки приложения: **Сканер · Пары · Друзья · Профиль**. Во вкладке «Пары» —
-переключатель «Расписание / История / Пропуск», во «Друзьях» — «Друзья / Группа / Заявки»; любую пару можно
+Вкладки приложения: **Сканер · Пары · Пропуск · Друзья · Профиль**. Во вкладке «Пары» —
+переключатель «Расписание / История», во «Друзьях» — «Друзья / Группа / Заявки»; любую пару можно
 отключить от отметки.
 
 > ФИО из профиля Пульса не парсится (ненадёжно) — везде показывается имя из Telegram.
