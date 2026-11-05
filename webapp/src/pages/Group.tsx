@@ -74,7 +74,28 @@ export function GroupView({ inviteCode }: Props) {
       webApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(group.invite_link)}&text=${encodeURIComponent(text)}`);
       return;
     }
-    navigator.clipboard?.writeText(group.code).then(() => flash('Код скопирован')).catch(() => flash(`Код группы: ${group.code}`));
+    copyCode();
+  };
+
+  // Нажатие на код копирует его. В WebView Telegram clipboard API бывает недоступен —
+  // тогда копируем через скрытое поле, а если и это не вышло, просто показываем код.
+  const copyCode = async () => {
+    if (!group) return;
+    haptic?.impactOccurred?.('light');
+    try {
+      await navigator.clipboard.writeText(group.code);
+      flash('Код скопирован');
+      return;
+    } catch {}
+    const field = document.createElement('textarea');
+    field.value = group.code;
+    field.setAttribute('readonly', '');
+    field.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(field);
+    field.select();
+    const ok = document.execCommand('copy');
+    field.remove();
+    flash(ok ? 'Код скопирован' : `Код группы: ${group.code}`);
   };
 
   const leave = async () => {
@@ -140,7 +161,7 @@ export function GroupView({ inviteCode }: Props) {
             <div class="eyebrow">Группа</div>
             <div style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 22, marginTop: 8, overflowWrap: 'anywhere' }}>{group.name}</div>
           </div>
-          <button class="tap" onClick={invite} style={{ flex: 'none', padding: '8px 12px', borderRadius: 999, border: '1px solid var(--hairline-2)',
+          <button class="tap" onClick={copyCode} title="Скопировать код" style={{ flex: 'none', padding: '8px 12px', borderRadius: 999, border: '1px solid var(--hairline-2)',
             background: 'none', color: 'var(--ink)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', cursor: 'pointer' }}>
             {group.code}
           </button>
