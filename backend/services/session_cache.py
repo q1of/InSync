@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from backend.services.mirea_service import decrypt_session
-from backend.database import get_db
+from backend.database import get_db, mark_targets
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +81,10 @@ class SessionCache:
 
     async def get_all_sessions_for_mark(self, telegram_id: int) -> list[tuple[int, str, dict]]:
         """
-        (telegram_id, display_name, cookies) для пользователя и включённых друзей
-        — готовый список для mark_attendance_parallel. Один проход: по одному
-        запросу на пользователя и на друзей (имя + сессия сразу), кеш наполняем
-        по ходу.
+        (telegram_id, display_name, cookies) для пользователя, включённых друзей
+        и группы — готовый список для mark_attendance_parallel. Один проход: по одному
+        запросу на пользователя и на всех остальных (имя + сессия сразу), кеш
+        наполняем по ходу.
         """
         sessions: list[tuple[int, str, dict]] = []
         try:
@@ -102,24 +102,13 @@ class SessionCache:
                 if user_cookies:
                     sessions.append((telegram_id, user_name, user_cookies))
 
-                # Друзья: имя + сессия + валидность одним запросом
-                async with db.execute(
-                    """
-                    SELECT u.telegram_id, u.display_name, u.encrypted_session, u.session_valid
-                    FROM friendships f
-                    JOIN users u ON f.friend_id = u.telegram_id
-                    WHERE f.user_id = ? AND f.status = 'accepted' AND f.marking_enabled = 1
-                    """,
-                    (telegram_id,),
-                ) as cursor:
-                    friends = await cursor.fetchall()
-
-                for fr in friends:
-                    if fr["session_valid"] and fr["encrypted_session"]:
-                        await self.set_session(fr["telegram_id"], fr["encrypted_session"])
-                    cookies = await self.get_session(fr["telegram_id"])
-                    if cookies:
-                        sessions.append((fr["telegram_id"], fr["display_name"], cookies))
+            # Друзья и группа: имя + сессия + валидность одним запросом
+            for fr in await mark_targets(telegram_id):
+                if fr["session_valid"] and fr["encrypted_session"]:
+                    await self.set_session(fr["telegram_id"], fr["encrypted_session"])
+                cookies = await self.get_session(fr["telegram_id"])
+                if cookies:
+                    sessions.append((fr["telegram_id"], fr["display_name"], cookies))
         except Exception as e:
             logger.error(f"Failed to get sessions for marking: {e}")
 

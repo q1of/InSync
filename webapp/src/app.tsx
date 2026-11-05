@@ -7,9 +7,10 @@ import { Profile } from './pages/Profile';
 import { Friends } from './pages/Friends';
 import { Lessons } from './pages/Lessons';
 import { Pass } from './pages/Pass';
-import { IconScan, IconUsers, IconCalendar, IconUser, IconPass } from './components/icons';
+import { Group } from './pages/Group';
+import { IconScan, IconUsers, IconCalendar, IconUser, IconPass, IconGroup } from './components/icons';
 
-type Tab = 'scanner' | 'lessons' | 'pass' | 'friends' | 'profile';
+type Tab = 'scanner' | 'lessons' | 'pass' | 'group' | 'friends' | 'profile';
 
 const BOOT_ATTEMPTS = 3;
 const BOOT_TIMEOUT_MS = 6000;
@@ -19,6 +20,7 @@ const TABS: { id: Tab; label: string; Icon: any }[] = [
   { id: 'scanner', label: 'Сканер', Icon: IconScan },
   { id: 'lessons', label: 'Пары', Icon: IconCalendar },
   { id: 'pass', label: 'Пропуск', Icon: IconPass },
+  { id: 'group', label: 'Группа', Icon: IconGroup },
   { id: 'friends', label: 'Друзья', Icon: IconUsers },
   { id: 'profile', label: 'Профиль', Icon: IconUser },
 ];
@@ -96,6 +98,7 @@ export function App() {
         <div key={tab} class="enter" style={{ flex: 1 }}>
           {tab === 'lessons' && <Lessons />}
           {tab === 'pass' && <Pass />}
+          {tab === 'group' && <Group />}
           {tab === 'friends' && <Friends onPendingChange={setPendingCount} />}
           {tab === 'profile' && <Profile onLogout={() => { setHasSession(false); setTab('scanner'); }} />}
         </div>

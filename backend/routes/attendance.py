@@ -12,7 +12,9 @@ from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import encrypt_session, mark_attendance_parallel
 from backend.services.mirea_client import is_already_marked, is_session_expired, warm_connection
-from backend.database import get_db, opted_out_now, notif_enabled, set_session_invalid, update_session
+from backend.database import (
+    get_db, mark_targets, opted_out_now, notif_enabled, set_session_invalid, update_session,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -20,6 +22,16 @@ router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 # Сериализует проверку повтора и запись истории: волны одного скана не плодят дубли,
 # а двое друзей, сканирующих одновременно, видят отметки друг друга.
 _LOG_LOCK = asyncio.Lock()
+
+# Фоновые задачи держим здесь: на задачу без сильной ссылки asyncio может собрать мусор
+# посреди работы — и уведомление молча не уйдёт.
+_BACKGROUND: set[asyncio.Task] = set()
+
+
+def _in_background(coro) -> None:
+    task = asyncio.create_task(coro)
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
 
 
 async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
@@ -57,8 +69,8 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
                     tid, f"⚠️ <b>Не удалось отметить</b>\nНе вышло отметить вас {where} — "
                          f"войдите заново через /start.",
                     parse_mode="HTML")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("уведомление для %s не отправлено: %s", tid, e)
 
 
 def _is_retriable(success: bool, error: str | None) -> bool:
@@ -227,7 +239,7 @@ async def mark_attendance(
     ]
 
     # Уведомления — В ФОНЕ, чтобы отправка сообщений не держала ответ на скан.
-    asyncio.create_task(_log_and_notify(user, raw_results, request.lesson_name))
+    _in_background(_log_and_notify(user, raw_results, request.lesson_name))
 
     return AttendanceResponse(
         results=results,
@@ -236,13 +248,20 @@ async def mark_attendance(
     )
 
 
+@router.get("/targets")
+async def mark_targets_list(user: TelegramUser = Depends(get_current_user)):
+    """Кого сканер отметит вместе с пользователем: друзья и группа (без него самого)."""
+    return [{"telegram_id": r["telegram_id"], "name": r["display_name"]}
+            for r in await mark_targets(user.telegram_id)]
+
+
 @router.post("/prewarm")
 async def prewarm(user: TelegramUser = Depends(get_current_user)):
     """Прогрев перед сканом: расшифровать и закешировать сессии (свою + друзей),
     чтобы ПЕРВАЯ отметка не платила за расшифровку. Фронт зовёт при открытии сканера."""
     sessions = await session_cache.get_all_sessions_for_mark(user.telegram_id)
     # Прогрев TLS-соединения к Пульсу в фоне — чтобы первый self-approve был мгновенным.
-    asyncio.create_task(warm_connection())
+    _in_background(warm_connection())
     return {"ready": len(sessions)}
 
 

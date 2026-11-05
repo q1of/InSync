@@ -129,6 +129,16 @@ export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scan
     lesson_building: opts?.lessonBuilding ?? null,
   });
 
+// Кого скан отметит вместе с пользователем (друзья и группа)
+export interface MarkTarget { telegram_id: number; name: string; }
+export const getMarkTargetsApi = () => api<MarkTarget[]>('GET', '/attendance/targets');
+
+// Учебная группа: участники в InSync и тумблер «отмечаться с группой»
+export interface GroupMember { telegram_id: number; name: string; is_self: boolean; enabled: boolean; session_alive: boolean; }
+export interface GroupInfo { group_name: string | null; enabled: boolean; members: GroupMember[]; }
+export const getGroupApi = () => api<GroupInfo>('GET', '/group');
+export const setGroupMarkingApi = (enabled: boolean) => api('POST', '/group/marking', { enabled });
+
 // Пропуск: события турникетов за день
 export interface PassEvent { time: number; kind: 'enter' | 'exit' | 'move'; title: string; place: string; }
 export interface PassDay { day: string; events: PassEvent[]; }

@@ -728,12 +728,14 @@ def _parse_selfapprove(data: bytes) -> tuple[bool | None, str | None]:
 
 
 def _approved_lesson_id(data: bytes) -> str | None:
-    """lessonId из approved{lessonId}: по нему видно повторную отметку на той же паре."""
+    """lessonId из approved{lessonId}: по нему видно повторную отметку на той же паре.
+
+    Берём только UUID: что-то другое могло бы совпасть у разных пар, и тогда
+    новая отметка считалась бы повтором (без уведомления).
+    """
     approved = _submessage(data, 2)
-    if not approved:
-        return None
-    m = _UUID_ANY_RE.search(approved.decode("utf-8", "ignore"))
-    return m.group(0).lower() if m else approved.hex()
+    m = _UUID_ANY_RE.search(approved.decode("utf-8", "ignore")) if approved else None
+    return m.group(0).lower() if m else None
 
 
 async def self_approve(

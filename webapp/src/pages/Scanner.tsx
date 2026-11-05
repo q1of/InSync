@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { markAttendanceApi, getFriendsApi, prewarmApi, getScheduleApi, getSessionApi } from '../api/client';
-import type { Friend } from '../api/client';
+import { markAttendanceApi, getMarkTargetsApi, prewarmApi, getScheduleApi, getSessionApi } from '../api/client';
+import type { MarkTarget } from '../api/client';
 import { IconCheck, IconX, IconScan, IconUsers } from '../components/icons';
 import { telegramReady, useTelegram } from '../hooks/useTelegram';
 
@@ -35,7 +35,7 @@ interface Props { active: boolean }
 
 export function Scanner({ active }: Props) {
   const { user, haptic, webApp } = useTelegram();
-  const [enabledFriends, setEnabledFriends] = useState<Friend[]>([]);
+  const [crewList, setCrewList] = useState<MarkTarget[]>([]);   // друзья и группа
   const [targets, setTargets] = useState<Target[]>([]);
   const [resultOpen, setResultOpen] = useState(false);   // мобайл: попап итога после нативного скана
   const [scanning, setScanning] = useState(false);       // мобайл: открыт нативный сканер
@@ -65,7 +65,7 @@ export function Scanner({ active }: Props) {
 
   useEffect(() => {
     if (!active) return;
-    getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
+    getMarkTargetsApi().then(setCrewList).catch(() => {});
     // Проактивно проверяем свою сессию — чтобы перезайти ЗАРАНЕЕ, а не когда уже висит QR.
     // logged_in=false значит слёт; valid=false при logged_in=true — временный сбой, баннер не нужен.
     getSessionApi(true).then((s) => setSessionBad(!s.logged_in)).catch(() => {});
@@ -79,7 +79,7 @@ export function Scanner({ active }: Props) {
 
   const buildTargets = (): Target[] => {
     const self: Target = { id: user?.id ?? 0, name: user?.first_name || 'Ты', is_self: true, status: 'pending', attempts: 0 };
-    const fr: Target[] = enabledFriends.map((f) => ({ id: f.telegram_id, name: f.name, is_self: false, status: 'pending', attempts: 0 }));
+    const fr: Target[] = crewList.map((f) => ({ id: f.telegram_id, name: f.name, is_self: false, status: 'pending', attempts: 0 }));
     return [self, ...fr];
   };
 
@@ -199,7 +199,7 @@ export function Scanner({ active }: Props) {
   const prepare = () => {
     hapticRef.current?.impactOccurred?.('light');
     prewarmApi().catch(() => {});
-    getFriendsApi().then((f) => setEnabledFriends(f.filter((x) => x.marking_enabled))).catch(() => {});
+    getMarkTargetsApi().then(setCrewList).catch(() => {});
     getScheduleApi(1).then((r) => {
       const now = Date.now() / 1000;
       const l = r.lessons.find((x) => (x.start_epoch || 0) - 900 <= now && now <= (x.end_epoch || (x.start_epoch || 0) + 5400));
@@ -240,8 +240,10 @@ export function Scanner({ active }: Props) {
   // На ПК: закрыли камеру — показываем попап итога (как на телефоне после скана).
   const closeCamera = () => { doneRef.current = true; setCamOpen(false); setResultOpen(true); };
 
-  const crew = enabledFriends.length;
-  const crewLine = crew ? `С тобой — ${crew} ${crew === 1 ? 'друг' : crew < 5 ? 'друга' : 'друзей'}` : 'Отметим только тебя';
+  const crew = crewList.length;
+  // Друзья и группа вместе: «человек» склоняем по числу (2 человека, 5 человек, 21 человек).
+  const few = crew % 10 >= 2 && crew % 10 <= 4 && (crew % 100 < 12 || crew % 100 > 14);
+  const crewLine = crew ? `С тобой — ${crew} ${few ? 'человека' : 'человек'}` : 'Отметим только тебя';
   const marked = targets.filter((t) => t.status === 'done' || t.status === 'already');
 
   // Показываем всех: кто отмечен, кто был отмечен раньше и кого не вышло отметить (с причиной).

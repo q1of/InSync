@@ -75,5 +75,14 @@ export const IconPass = ({ size, color, stroke }: P) => svg(<>
   <path d="M4.5 17c.6-1.9 2.2-3 4-3s3.4 1.1 4 3M15 9h4M15 13h3" />
 </>, size, color, stroke);
 
-export const IconChevron = ({ size, color, stroke, left }: P & { left?: boolean }) =>
+export const IconGroup = ({ size, color, stroke }: P) => svg(<>
+  <circle cx="12" cy="8" r="3.2" />
+  <path d="M6.5 20v-1.2a4 4 0 0 1 4-4h3a4 4 0 0 1 4 4V20" />
+  <circle cx="4.8" cy="10.2" r="2.2" />
+  <path d="M1.2 19v-.8a3 3 0 0 1 3-3h.6" />
+  <circle cx="19.2" cy="10.2" r="2.2" />
+  <path d="M22.8 19v-.8a3 3 0 0 0-3-3h-.6" />
+</>, size, color, stroke);
+
+export const IconChevron =({ size, color, stroke, left }: P & { left?: boolean }) =>
   svg(<polyline points={left ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />, size, color, stroke);

@@ -304,10 +304,16 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 .logo-mark polyline { fill: none; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
 .logo-mark .logo-base { stroke: var(--ink); opacity: 0.26; }
 .logo-mark .logo-trace {
-  stroke: var(--ink); stroke-dasharray: 26 100;
-  animation: logoTrace 2.6s linear infinite;   /* без drop-shadow — дешевле для слабых телефонов */
+  stroke: var(--ink); stroke-dasharray: 26 200;
+  animation: logoTrace 2.6s ease-in-out infinite;   /* без drop-shadow — дешевле для слабых телефонов */
 }
-@keyframes logoTrace { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -126; } }
+/* Штрих всегда целиком на линии: проявляется в начале и гаснет у конца, не обрезаясь краем. */
+@keyframes logoTrace {
+  0%   { stroke-dashoffset: 0;   opacity: 0; }
+  18%  { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { stroke-dashoffset: -74; opacity: 0; }
+}
 
 /* рамка-уголки для камеры на ПК — как в нативном сканере Telegram */
 .scan-corner { position: absolute; width: 30px; height: 30px; border: 3px solid rgba(255, 255, 255, 0.92); }

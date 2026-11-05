@@ -624,3 +624,68 @@ class TestPresence:
 
         monkeypatch.setattr(acs_mod, "pulse_user_id", broken)
         assert asyncio.run(acs_mod.presence_warning(1, {}, "А-213", "В-78")) is None
+
+
+class TestGroupTargets:
+    @pytest.fixture
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(database.settings, "database_path", str(tmp_path / "g.db"))
+
+        async def prepare():
+            await database.init_db()
+            for tid, name, group in [(1, "Я", "ИКБО-01-23"), (2, "Одногруппник", "ИКБО-01-23"),
+                                     (3, "Не включил", "ИКБО-01-23"), (4, "Друг", "ИКБО-02-23"),
+                                     (5, "Чужой", "ИКБО-02-23")]:
+                await database.upsert_user(tid, name, group_name=group)
+            for tid in (1, 2, 5):
+                await database.set_group_marking(tid, True)
+            async with database.get_db() as conn:
+                await conn.execute("INSERT INTO friendships (user_id, friend_id, status) VALUES (1, 4, 'accepted')")
+                await conn.execute("INSERT INTO friendships (user_id, friend_id, status) VALUES (1, 2, 'accepted')")
+                await conn.commit()
+
+        asyncio.run(prepare())
+
+    def targets(self, tid):
+        return sorted(r["telegram_id"] for r in asyncio.run(database.mark_targets(tid)))
+
+    def test_friends_and_group_with_toggle_on(self, db):
+        # 2 — и друг, и одногруппник: один раз; 3 не включил тумблер; 5 — другая группа.
+        assert self.targets(1) == [2, 4]
+
+    def test_toggle_off_means_no_group(self, db):
+        asyncio.run(database.set_group_marking(1, False))
+        assert self.targets(1) == [2, 4]   # остаются только друзья
+        assert self.targets(2) == []       # и группа больше не отмечает пользователя 1
+
+    def test_group_list(self, db):
+        g = asyncio.run(database.get_group(1))
+        assert g["group_name"] == "ИКБО-01-23" and g["enabled"] is True
+        assert [(m["telegram_id"], m["enabled"], m["is_self"]) for m in g["members"]] == [
+            (2, True, False), (1, True, True), (3, False, False)]
+
+    def test_no_group_name(self, db):
+        asyncio.run(database.upsert_user(9, "Без группы"))
+        assert asyncio.run(database.get_group(9)) == {"group_name": None, "enabled": False, "members": []}
+
+
+def test_non_uuid_lesson_id_is_ignored():
+    # Не UUID мог бы совпасть у разных пар — тогда новая отметка ушла бы в «повтор» без уведомления.
+    assert mirea_client._approved_lesson_id(_pb(2, b"\x08\x01")) is None
+
+
+def test_background_task_is_kept_until_done():
+    async def run():
+        done = asyncio.Event()
+
+        async def job():
+            await asyncio.sleep(0)
+            done.set()
+
+        attendance._in_background(job())
+        assert len(attendance._BACKGROUND) == 1
+        await done.wait()
+        await asyncio.sleep(0)
+        return len(attendance._BACKGROUND)
+
+    assert asyncio.run(run()) == 0

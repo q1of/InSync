@@ -47,6 +47,7 @@ async def init_db():
                 notif_marked INTEGER DEFAULT 1,   -- уведомлять об отметках на парах
                 notif_login INTEGER DEFAULT 1,    -- уведомлять о входе в аккаунт
                 notif_session INTEGER DEFAULT 1,  -- уведомлять о слёте сессии
+                group_marking INTEGER DEFAULT 0,  -- отмечаться с учебной группой (в обе стороны)
                 created_at INTEGER DEFAULT (unixepoch())
             );
         """)
@@ -104,6 +105,8 @@ async def init_db():
         for col in ("notif_marked", "notif_login", "notif_session"):
             if col not in ucols:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER DEFAULT 1")
+        if "group_marking" not in ucols:
+            await db.execute("ALTER TABLE users ADD COLUMN group_marking INTEGER DEFAULT 0")
 
         async with db.execute("PRAGMA table_info(attendance_log)") as cur:
             acols = [r["name"] for r in await cur.fetchall()]
@@ -124,6 +127,7 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_initiator ON attendance_log(initiator, scan_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_attlog_target ON attendance_log(target_user, created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_optout_user ON lesson_optout(telegram_id, start_epoch)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_group ON users(group_name)")
 
         await db.commit()
 
@@ -261,6 +265,58 @@ async def set_notif_pref(telegram_id: int, key: str, enabled: bool) -> None:
 async def notif_enabled(telegram_id: int, key: str) -> bool:
     """True, если пользователь хочет получать уведомления этого типа."""
     return (await get_notif_prefs(telegram_id)).get(key, True)
+
+
+async def mark_targets(telegram_id: int) -> List[aiosqlite.Row]:
+    """Кого отмечает скан пользователя: друзья с включённой отметкой и учебная группа.
+
+    Группа — все с той же group_name, если тумблер «отмечаться с группой» включён
+    и у сканирующего, и у них. UNION убирает тех, кто и друг, и одногруппник.
+    """
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT u.telegram_id, u.display_name, u.encrypted_session, u.session_valid
+               FROM friendships f JOIN users u ON f.friend_id = u.telegram_id
+               WHERE f.user_id = ? AND f.status = 'accepted' AND f.marking_enabled = 1
+               UNION
+               SELECT u.telegram_id, u.display_name, u.encrypted_session, u.session_valid
+               FROM users me JOIN users u ON u.group_name = me.group_name AND u.telegram_id != me.telegram_id
+               WHERE me.telegram_id = ? AND me.group_marking = 1 AND u.group_marking = 1
+               ORDER BY 2 COLLATE NOCASE""",
+            (telegram_id, telegram_id),
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def get_group(telegram_id: int) -> dict:
+    """Учебная группа пользователя, его тумблер и все участники группы в InSync."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT group_name, group_marking FROM users WHERE telegram_id = ?", (telegram_id,),
+        ) as cur:
+            me = await cur.fetchone()
+        if not me or not me["group_name"]:
+            return {"group_name": None, "enabled": False, "members": []}
+        async with db.execute(
+            """SELECT telegram_id, display_name, session_valid, group_marking FROM users
+               WHERE group_name = ? ORDER BY group_marking DESC, display_name COLLATE NOCASE""",
+            (me["group_name"],),
+        ) as cur:
+            rows = await cur.fetchall()
+    return {
+        "group_name": me["group_name"],
+        "enabled": bool(me["group_marking"]),
+        "members": [{"telegram_id": r["telegram_id"], "name": r["display_name"],
+                     "is_self": r["telegram_id"] == telegram_id, "enabled": bool(r["group_marking"]),
+                     "session_alive": bool(r["session_valid"])} for r in rows],
+    }
+
+
+async def set_group_marking(telegram_id: int, enabled: bool) -> None:
+    async with get_db() as db:
+        await db.execute("UPDATE users SET group_marking = ? WHERE telegram_id = ?",
+                         (1 if enabled else 0, telegram_id))
+        await db.commit()
 
 
 async def get_active_session_users() -> List[aiosqlite.Row]:
