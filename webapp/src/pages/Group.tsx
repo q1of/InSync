@@ -163,14 +163,20 @@ export function GroupView({ inviteCode }: Props) {
         <div class="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ minWidth: 0 }}>
             <div class="eyebrow">Группа</div>
-            <div style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 22, marginTop: 8, overflowWrap: 'anywhere' }}>{group.name}</div>
+            <div style={{ fontFamily: 'Unbounded, sans-serif', fontWeight: 700, fontSize: 20, lineHeight: 1.2, marginTop: 8, overflowWrap: 'break-word' }}>{group.name}</div>
           </div>
           <button class="tap" onClick={copyCode} title="Скопировать код" style={{ flex: 'none', padding: '8px 12px', borderRadius: 999,
             border: `1px solid ${copied ? 'var(--ink)' : 'var(--hairline-2)'}`, background: copied ? 'var(--ink)' : 'none',
             color: copied ? '#09090B' : 'var(--ink)', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13,
-            letterSpacing: '0.08em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            letterSpacing: '0.08em', cursor: 'pointer', position: 'relative',
             transition: 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease' }}>
-            {copied ? <><IconCheck size={14} stroke={3} /> Скопировано</> : group.code}
+            {/* Код остаётся в разметке (невидимым), поэтому кнопка не меняет размер: поверх — галочка */}
+            <span style={{ visibility: copied ? 'hidden' : 'visible' }}>{group.code}</span>
+            {copied && (
+              <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+                <IconCheck size={16} stroke={3} />
+              </span>
+            )}
           </button>
         </div>
         <div class="faint" style={{ fontSize: 13, marginTop: 6 }}>
