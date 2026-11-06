@@ -55,18 +55,23 @@ def zone_place(zone: str | None) -> tuple[str | None, str | None]:
     return (f"{m[1]}{m[2]}" if m else None), next((g for g in letter.groups() if g), None) if letter else None
 
 
+def _same_campus(a: str, b: str) -> bool:
+    """«МП1» в расписании и «П1» у турникетов Пироговки — один кампус: сверяем по концу кода."""
+    return a == b or a.endswith(b) or b.endswith(a)
+
+
 def presence_problem(events: list[dict], now: float, room: str | None, building: str | None) -> str | None:
     """Почему студента нет в корпусе пары по последнему событию турникетов (или None)."""
     past = [e for e in events if e["time"] <= now + 60]
-    if not past or past[-1]["kind"] == ACS_EXIT:
-        return NOT_INSIDE
-    zone = past[-1]["enter"] or past[-1]["exit"]
-    if "неконтролируем" in zone.lower():
+    last = past[-1] if past else None
+    zone = (last["enter"] or last["exit"]) if last else ""
+    # Пока сверка новая — пишем, что с чем сравнивали, чтобы поправить по реальным названиям.
+    logger.warning("пропуск: аудитория=%r корпус=%r событий=%d последнее=%r турникет=%r",
+                   room, building, len(past), last and last["kind"], zone)
+    if not last or last["kind"] == ACS_EXIT or "неконтролируем" in zone.lower():
         return NOT_INSIDE
     (lesson_campus, lesson_letter), (zone_campus, zone_letter) = lesson_place(room, building), zone_place(zone)
-    # Пока сверка корпусов новая — пишем, что с чем сравнивали, чтобы поправить по реальным названиям.
-    logger.warning("пропуск: аудитория=%r корпус=%r турникет=%r", room, building, zone)
-    if lesson_campus and zone_campus and lesson_campus != zone_campus:
+    if lesson_campus and zone_campus and not _same_campus(lesson_campus, zone_campus):
         return f"По турникетам в другом корпусе ({zone}) — отметка может не засчитаться"
     if lesson_letter and zone_letter and lesson_letter != zone_letter:
         return f"По турникетам в другом корпусе ({zone}) — отметка может не засчитаться"
@@ -118,8 +123,10 @@ async def presence_warning(telegram_id: int, cookies: dict, room: str | None, bu
         if not uid:
             return None
         now = time.time()
-        start, _ = day_bounds(today_msk())
-        res = await get_acs_events(cookies, uid, start, now + 60)
+        # Запрашиваем весь день, как вкладка «Пропуск»: на диапазон «до текущей минуты» Пульс
+        # отвечал пустым списком тем, кто был в корпусе. Будущее отсекает presence_problem.
+        start, end = day_bounds(today_msk())
+        res = await get_acs_events(cookies, uid, start, end)
         if res.get("error"):
             return None
         return presence_problem(res["events"], now, room, building)

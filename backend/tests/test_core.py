@@ -707,3 +707,33 @@ def test_background_task_is_kept_until_done():
         return len(attendance._BACKGROUND)
 
     assert asyncio.run(run()) == 0
+
+
+class TestPresenceCampuses:
+    NOW = 1_000_000
+
+    def test_pirogovka_zone_matches_mp1_lesson(self):
+        zone = "П1 А 1эт ЦентральныйВход ДополнительныйВход"
+        assert acs_mod.zone_place(zone) == ("П1", "А")
+        events = [{"time": self.NOW - 600, "kind": 1, "enter": zone, "exit": ""}]
+        assert acs_mod.presence_problem(events, self.NOW, "А-123", "МП-1") is None
+
+    def test_stromynka_zone(self):
+        events = [{"time": self.NOW - 600, "kind": 1, "enter": "С20 1эт ЦентральныйВход", "exit": ""}]
+        assert acs_mod.presence_problem(events, self.NOW, "435", "С-20") is None
+        assert "другом корпусе" in acs_mod.presence_problem(events, self.NOW, "А-213", "В-78")
+
+    def test_check_asks_pulse_for_the_whole_day(self, monkeypatch):
+        asked = []
+
+        async def uid(*_):
+            return "u"
+
+        async def events(_cookies, _uid, start, end):
+            asked.append(end - start)
+            return {"error": None, "events": []}
+
+        monkeypatch.setattr(acs_mod, "pulse_user_id", uid)
+        monkeypatch.setattr(acs_mod, "get_acs_events", events)
+        asyncio.run(acs_mod.presence_warning(1, {}, "А-1", "В-78"))
+        assert asked == [86399]
