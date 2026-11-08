@@ -20,6 +20,10 @@ if ! swapon --show 2>/dev/null | grep -q .; then
   chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
   grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
+# Swap — только запас на сборку. С обычными 60 система выгружает простаивающего бота на диск,
+# и первый запрос после паузы ждёт, пока он поднимется обратно.
+sysctl -q vm.swappiness=10
+echo 'vm.swappiness=10' > /etc/sysctl.d/99-insync.conf
 
 say "Системные пакеты"
 export DEBIAN_FRONTEND=noninteractive

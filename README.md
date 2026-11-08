@@ -53,6 +53,7 @@ InSync/
 │     └─ styles/global.css
 │
 ├─ deploy/setup.sh           # установка на сервер одной командой (Caddy + systemd)
+├─ deploy/update.sh          # обновление до свежей версии (только нужные шаги)
 ├─ data/                     # локальные данные (БД, lock) — в .gitignore
 └─ .gitignore
 ```
@@ -105,9 +106,11 @@ Let's Encrypt сертификат не выдаст). После установ
 **Обновление после `git push`:**
 
 ```bash
-cd /opt/insync && git pull && cd webapp && npm run build && cd .. \
-  && cp -r webapp/dist/* /var/www/insync/ && systemctl restart insync
+bash /opt/insync/deploy/update.sh
 ```
+
+Скрипт делает только нужное: пакеты фронта ставит заново, лишь когда они поменялись,
+фронт пересобирает при изменениях в `webapp/`, бота перезапускает при изменениях в `backend/`.
 
 Логи: `journalctl -u insync -f` · перезапуск: `systemctl restart insync`.
 
