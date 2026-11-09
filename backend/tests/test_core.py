@@ -763,3 +763,55 @@ class TestPresenceInNotification:
 
     def test_scan_response_has_no_warning(self):
         assert "warning" not in attendance.AttendanceResult.model_fields
+
+
+class TestHistoryIncoming:
+    ME = TelegramUser(telegram_id=1, display_name="Я")
+
+    @pytest.fixture
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(database.settings, "database_path", str(tmp_path / "h.db"))
+
+        async def prepare():
+            await database.init_db()
+            await database.upsert_user(1, "Я")
+            await database.upsert_user(2, "Петя")
+            await database.upsert_user(3, "Вася")
+
+        asyncio.run(prepare())
+
+    def _record(self, initiator, target, scan, lesson_id=LESSON, success=True):
+        user = TelegramUser(telegram_id=initiator, display_name="x")
+        r = {"telegram_id": target, "user_name": "x", "success": success, "error": None, "lesson_id": lesson_id}
+        asyncio.run(attendance._record_marks(user, [r], "qr", scan, "Матан", None))
+
+    def _history(self):
+        return asyncio.run(attendance.attendance_history(self.ME))["scans"]
+
+    def test_marked_by_friend_shows_incoming(self, db):
+        self._record(2, 1, "s1")   # Петя отметил меня
+        scans = self._history()
+        assert len(scans) == 1
+        assert scans[0]["kind"] == "incoming" and scans[0]["by"] == ["Петя"]
+
+    def test_second_marker_is_repeat_not_a_new_card(self, db):
+        self._record(2, 1, "s1")   # Петя отметил меня
+        self._record(3, 1, "s2")   # Вася на той же паре — я уже отмечен, не новая карточка
+        scans = self._history()
+        assert len(scans) == 1 and scans[0]["by"] == ["Петя"]
+
+    def test_own_scan_hides_incoming(self, db):
+        self._record(1, 1, "s1")   # отметился сам
+        self._record(2, 1, "s2")   # и Петя отметил — дубль-карточки быть не должно
+        scans = self._history()
+        assert [s["kind"] for s in scans] == ["mine"]
+
+    def test_my_scan_and_incoming_on_different_lessons(self, db):
+        self._record(1, 2, "s1", lesson_id=LESSON)        # я отметил Петю на паре A
+        self._record(3, 1, "s2", lesson_id=OTHER_LESSON)  # Вася отметил меня на паре B
+        scans = self._history()
+        assert sorted(s["kind"] for s in scans) == ["incoming", "mine"]
+
+    def test_failed_incoming_is_ignored(self, db):
+        self._record(2, 1, "s1", success=False)
+        assert self._history() == []

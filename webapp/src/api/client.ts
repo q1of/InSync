@@ -150,7 +150,12 @@ export interface PassDay { day: string; events: PassEvent[]; }
 export const getPassDayApi = (day: string) => api<PassDay>('GET', `/pass/day?day=${day}`);
 
 export interface ScanTarget { telegram_id: number; name: string; is_self: boolean; success: boolean; already_marked: boolean; error: string | null; }
-export interface Scan { created_at: number; lesson_name?: string | null; scan_id?: string | null; targets: ScanTarget[]; successful: number; total: number; }
+// kind 'mine' — мой скан; 'incoming' — меня отметил друг/группа (by — кто именно).
+export interface Scan {
+  kind?: 'mine' | 'incoming';
+  created_at: number; lesson_name?: string | null; scan_id?: string | null;
+  targets?: ScanTarget[]; successful?: number; total?: number; by?: string[];
+}
 export const getHistoryApi = () =>
   api<{ scans: Scan[] }>('GET', '/attendance/history');
 

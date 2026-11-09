@@ -281,51 +281,97 @@ async def prewarm(user: TelegramUser = Depends(get_current_user)):
     return {"ready": len(sessions)}
 
 
+def _lesson_key(row) -> tuple:
+    """Идентификатор пары — чтобы отличать разные пары и склеивать записи об одной.
+
+    Приоритет: id пары из Пульса → начало пары по расписанию → название + день.
+    """
+    if row["lesson_id"]:
+        return ("id", row["lesson_id"])
+    if row["lesson_start"]:
+        return ("start", row["lesson_start"])
+    day = (row["created_at"] or 0) // 86400
+    if row["lesson_name"]:
+        return ("name", row["lesson_name"], day)
+    return ("scan", row["scan_id"] or row["created_at"])
+
+
+def _add_my_scan(row, me: int, index: dict, scans: list, self_marked: set) -> None:
+    """Запись о скане, который сделал сам пользователь (initiator = me)."""
+    if row["scan_id"]:
+        bucket = ("sid", row["scan_id"])
+    else:
+        bucket = ("legacy", row["qr_token"], (row["created_at"] or 0) // 120)  # окно 2 минуты
+    scan = index.get(bucket)
+    if scan is None:
+        scan = {"kind": "mine", "created_at": row["created_at"], "lesson_name": row["lesson_name"],
+                "scan_id": row["scan_id"], "targets": [], "successful": 0, "total": 0}
+        index[bucket] = scan
+        scans.append(scan)
+    elif not scan.get("lesson_name") and row["lesson_name"]:
+        scan["lesson_name"] = row["lesson_name"]
+    is_self = row["target_user"] == me
+    scan["targets"].append({
+        "telegram_id": row["target_user"],   # по нему сканер сверяет итог, если ответ оборвался
+        "name": "Вы" if is_self else (row["target_name"] or "Студент"),
+        "is_self": is_self,
+        "success": bool(row["success"]),
+        "already_marked": bool(row["already_marked"]),
+        # У старых успешных отметок в error_msg лежало предупреждение «не в корпусе» — не показываем.
+        "error": None if row["success"] else row["error_msg"],
+    })
+    scan["total"] += 1
+    if row["success"]:
+        scan["successful"] += 1
+    if is_self and row["success"]:
+        self_marked.add(_lesson_key(row))
+
+
+def _add_incoming(row, incoming: dict) -> None:
+    """Отметка, которую за пользователя сделал друг/группа (target = me). Одна пара — одна карточка."""
+    key = _lesson_key(row)
+    card = incoming.get(key)
+    if card is None:
+        card = {"kind": "incoming", "key": key, "created_at": row["created_at"],
+                "lesson_name": row["lesson_name"], "by": []}
+        incoming[key] = card
+    if (row["created_at"] or 0) < (card["created_at"] or 0):
+        card["created_at"] = row["created_at"]   # когда меня отметили впервые
+    name = row["initiator_name"] or "Студент"
+    if name not in card["by"]:
+        card["by"].append(name)
+
+
 @router.get("/history")
 async def attendance_history(user: TelegramUser = Depends(get_current_user)):
-    """История сканов: что когда отмечено и для кого (с именами и статусом)."""
+    """История: сканы самого пользователя и отметки, которые сделали за него друзья/группа."""
+    me = user.telegram_id
     async with get_db() as db:
         async with db.execute(
-            """SELECT a.target_user, a.qr_token, a.scan_id, a.success, a.error_msg, a.created_at, a.lesson_name,
-                      a.already_marked, u.display_name AS target_name
+            """SELECT a.initiator, a.target_user, a.qr_token, a.scan_id, a.success, a.error_msg,
+                      a.created_at, a.lesson_name, a.lesson_id, a.lesson_start, a.already_marked,
+                      ut.display_name AS target_name, ui.display_name AS initiator_name
                FROM attendance_log a
-               LEFT JOIN users u ON u.telegram_id = a.target_user
-               WHERE a.initiator = ?
-               ORDER BY a.id DESC LIMIT 200""",
-            (user.telegram_id,),
+               LEFT JOIN users ut ON ut.telegram_id = a.target_user
+               LEFT JOIN users ui ON ui.telegram_id = a.initiator
+               WHERE a.initiator = ? OR a.target_user = ?
+               ORDER BY a.id DESC LIMIT 400""",
+            (me, me),
         ) as cursor:
             rows = await cursor.fetchall()
 
-    # Группируем один скан: по scan_id (новые записи), иначе — qr_token + близкое время (старые).
     scans: list[dict] = []
     index: dict[tuple, dict] = {}
-    for row in rows:
-        if row["scan_id"]:
-            bucket = ("sid", row["scan_id"])
-        else:
-            bucket = ("legacy", row["qr_token"], (row["created_at"] or 0) // 120)  # окно 2 минуты
-        scan = index.get(bucket)
-        if scan is None:
-            scan = {"created_at": row["created_at"], "lesson_name": row["lesson_name"], "scan_id": row["scan_id"],
-                    "targets": [], "successful": 0, "total": 0}
-            index[bucket] = scan
-            scans.append(scan)
-        elif not scan.get("lesson_name") and row["lesson_name"]:
-            scan["lesson_name"] = row["lesson_name"]
-        name = row["target_name"] or ("Вы" if row["target_user"] == user.telegram_id else "Студент")
-        if row["target_user"] == user.telegram_id:
-            name = "Вы"
-        scan["targets"].append({
-            "telegram_id": row["target_user"],   # по нему сканер сверяет итог, если ответ оборвался
-            "name": name,
-            "is_self": row["target_user"] == user.telegram_id,
-            "success": bool(row["success"]),
-            "already_marked": bool(row["already_marked"]),
-            # У старых успешных отметок в error_msg лежало предупреждение «не в корпусе» — не показываем.
-            "error": None if row["success"] else row["error_msg"],
-        })
-        scan["total"] += 1
-        if row["success"]:
-            scan["successful"] += 1
+    self_marked: set = set()            # пары, где я отметился сам (успешно)
+    incoming: dict[tuple, dict] = {}    # пары, где меня отметил кто-то другой
 
+    for row in rows:
+        if row["initiator"] == me:
+            _add_my_scan(row, me, index, scans, self_marked)
+        elif row["target_user"] == me and row["success"] and not row["already_marked"]:
+            _add_incoming(row, incoming)
+
+    # «Вас отметили» не показываем на парах, где я уже отметился сам, — иначе два блока об одном.
+    scans += [card for key, card in incoming.items() if key not in self_marked]
+    scans.sort(key=lambda s: s["created_at"] or 0, reverse=True)
     return {"scans": scans}
