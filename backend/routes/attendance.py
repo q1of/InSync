@@ -12,6 +12,7 @@ from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services.session_cache import session_cache
 from backend.services.mirea_service import encrypt_session, mark_attendance_parallel
 from backend.services.mirea_client import is_already_marked, is_session_expired, warm_connection
+from backend.services.acs import presence_warning
 from backend.database import (
     get_db, mark_targets, opted_out_now, notif_enabled, set_session_invalid, update_session,
 )
@@ -34,10 +35,11 @@ def _in_background(coro) -> None:
     task.add_done_callback(_BACKGROUND.discard)
 
 
-async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
-                                 lesson_name: str | None = None) -> None:
+async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict], lesson_name: str | None = None,
+                                 cookies_by_id: dict[int, dict] | None = None,
+                                 room: str | None = None, building: str | None = None) -> None:
     """Уведомления в Telegram по итогам скана (с учётом настроек получателя):
-      • другу, которого отметили — «вас отметил …»;
+      • другу, которого отметили — «вас отметил …» (и предупреждение, если он не в корпусе пары);
       • другу, которого пропустили из-за его же отключения — «вас не отметили, вы отключили».
     """
     from backend.main import bot  # ленивый импорт — избегаем циклической зависимости
@@ -45,6 +47,16 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
         return
     marker = html.escape(user.display_name or "")
     where = f"на «{html.escape(lesson_name)}»" if lesson_name else "на паре"
+
+    # Турникеты проверяем здесь, уже после ответа на скан: на 15 человек проверка заметно
+    # задерживала итог, а нужна она только самому отмеченному — в его уведомлении.
+    cookies_by_id = cookies_by_id or {}
+    fresh = [r["telegram_id"] for r in raw_results
+             if r.get("success") and not r.get("already_marked")
+             and r["telegram_id"] != user.telegram_id and r["telegram_id"] in cookies_by_id]
+    found = await asyncio.gather(*(presence_warning(t, cookies_by_id[t], room, building) for t in fresh))
+    warnings = {t: w for t, w in zip(fresh, found) if w}
+
     for r in raw_results:
         tid = r["telegram_id"]
         if tid == user.telegram_id:
@@ -55,7 +67,7 @@ async def _notify_marked_friends(user: TelegramUser, raw_results: list[dict],
             if r.get("already_marked"):
                 continue  # уже был отмечен — новой отметки нет, сообщать не о чем
             if r.get("success"):
-                warning = f"\n⚠️ {html.escape(r['warning'])}." if r.get("warning") else ""
+                warning = f"\n⚠️ {html.escape(warnings[tid])}." if tid in warnings else ""
                 await bot.send_message(
                     tid, f"✅ <b>Вас отметили</b>\n{marker} отметил вас {where} через InSync.{warning}",
                     parse_mode="HTML")
@@ -110,7 +122,7 @@ async def _flag_repeat(db, r: dict, scan_id: str | None, lesson_start: int | Non
         ) as cur:
             already = await cur.fetchone() is not None
     if already:
-        r.update(success=True, error=None, warning=None, already_marked=True)
+        r.update(success=True, error=None, already_marked=True)
 
 
 async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: str, scan_id: str | None,
@@ -136,7 +148,7 @@ async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: st
                                    lesson_start = COALESCE(?, lesson_start), already_marked = ?,
                                    created_at = unixepoch()
                                WHERE initiator = ? AND target_user = ? AND scan_id = ?""",
-                            (r["success"], r.get("error") or r.get("warning"), qr_data, lesson_name, r.get("lesson_id"),
+                            (r["success"], r.get("error"), qr_data, lesson_name, r.get("lesson_id"),
                              lesson_start, already, user.telegram_id, r["telegram_id"], scan_id),
                         )
                         if cur.rowcount:
@@ -146,7 +158,7 @@ async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: st
                            (initiator, target_user, qr_token, success, error_msg, scan_id,
                             lesson_name, lesson_id, lesson_start, already_marked)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (user.telegram_id, r["telegram_id"], qr_data, r["success"], r.get("error") or r.get("warning"),
+                        (user.telegram_id, r["telegram_id"], qr_data, r["success"], r.get("error"),
                          scan_id, lesson_name, r.get("lesson_id"), lesson_start, already),
                     )
                 await db.commit()
@@ -154,7 +166,9 @@ async def _record_marks(user: TelegramUser, raw_results: list[dict], qr_data: st
             logger.error("attendance log failed: %s", e)
 
 
-async def _log_and_notify(user: TelegramUser, raw_results: list[dict], lesson_name: str | None) -> None:
+async def _log_and_notify(user: TelegramUser, raw_results: list[dict], lesson_name: str | None,
+                          cookies_by_id: dict[int, dict] | None = None,
+                          room: str | None = None, building: str | None = None) -> None:
     """Фоновое сохранение сессий + уведомления — вне критического пути ответа на скан."""
     # Cookie обновилась при отметке — сохраняем, иначе следующий скан снова потратит на это время.
     for r in raw_results:
@@ -175,7 +189,7 @@ async def _log_and_notify(user: TelegramUser, raw_results: list[dict], lesson_na
             except Exception:
                 pass
 
-    await _notify_marked_friends(user, raw_results, lesson_name)
+    await _notify_marked_friends(user, raw_results, lesson_name, cookies_by_id, room, building)
 
 
 @router.post("/mark", response_model=AttendanceResponse)
@@ -207,8 +221,7 @@ async def mark_attendance(
     opted = await opted_out_now([s[0] for s in sessions], now)
 
     to_mark = [s for s in sessions if s[0] not in opted]
-    raw_results = await mark_attendance_parallel(
-        request.qr_data, to_mark, request.lesson_room, request.lesson_building) if to_mark else []
+    raw_results = await mark_attendance_parallel(request.qr_data, to_mark) if to_mark else []
     for tid, name, _ in sessions:
         if tid in opted:
             raw_results.append({
@@ -232,14 +245,17 @@ async def mark_attendance(
             error=r.get("error"),
             opted_out=r.get("opted_out", False),
             already_marked=r.get("already_marked", False),
-            warning=r.get("warning"),
             retriable=False if r.get("opted_out") else _is_retriable(r["success"], r.get("error")),
         )
         for r in raw_results
     ]
 
     # Уведомления — В ФОНЕ, чтобы отправка сообщений не держала ответ на скан.
-    _in_background(_log_and_notify(user, raw_results, request.lesson_name))
+    # Для проверки турникетов — свежие cookie, если Пульс их обновил при отметке.
+    cookies_by_id = {tid: c for tid, _, c in to_mark}
+    cookies_by_id.update({r["telegram_id"]: r["cookies"] for r in raw_results if r.get("cookies")})
+    _in_background(_log_and_notify(user, raw_results, request.lesson_name, cookies_by_id,
+                                   request.lesson_room, request.lesson_building))
 
     return AttendanceResponse(
         results=results,
@@ -290,7 +306,7 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
             bucket = ("legacy", row["qr_token"], (row["created_at"] or 0) // 120)  # окно 2 минуты
         scan = index.get(bucket)
         if scan is None:
-            scan = {"created_at": row["created_at"], "lesson_name": row["lesson_name"],
+            scan = {"created_at": row["created_at"], "lesson_name": row["lesson_name"], "scan_id": row["scan_id"],
                     "targets": [], "successful": 0, "total": 0}
             index[bucket] = scan
             scans.append(scan)
@@ -300,12 +316,13 @@ async def attendance_history(user: TelegramUser = Depends(get_current_user)):
         if row["target_user"] == user.telegram_id:
             name = "Вы"
         scan["targets"].append({
+            "telegram_id": row["target_user"],   # по нему сканер сверяет итог, если ответ оборвался
             "name": name,
             "is_self": row["target_user"] == user.telegram_id,
             "success": bool(row["success"]),
             "already_marked": bool(row["already_marked"]),
-            # У успешной отметки в error_msg лежит предупреждение «не в корпусе»
-            "error": row["error_msg"],
+            # У старых успешных отметок в error_msg лежало предупреждение «не в корпусе» — не показываем.
+            "error": None if row["success"] else row["error_msg"],
         })
         scan["total"] += 1
         if row["success"]:

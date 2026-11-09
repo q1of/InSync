@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { markAttendanceApi, getMarkTargetsApi, prewarmApi, getScheduleApi, getSessionApi } from '../api/client';
-import type { MarkTarget } from '../api/client';
+import { markAttendanceApi, getMarkTargetsApi, prewarmApi, getScheduleApi, getSessionApi, getHistoryApi } from '../api/client';
+import type { MarkTarget, ScanTarget } from '../api/client';
 import { IconCheck, IconX, IconScan, IconUsers } from '../components/icons';
 import { telegramReady, useTelegram } from '../hooks/useTelegram';
 
@@ -25,10 +25,21 @@ function qrToken(text: string): string | null {
 type Status = 'pending' | 'marking' | 'done' | 'already' | 'failed' | 'skipped';
 interface Target {
   id: number; name: string; is_self: boolean; status: Status; error?: string | null; attempts: number;
-  warning?: string | null;   // отмечен, но по турникетам не в корпусе пары
+}
+
+// Кто уже отмечен в этом скане по данным сервера (telegram_id → запись истории).
+async function markedInScan(scanId: string): Promise<Map<number, ScanTarget>> {
+  try {
+    const { scans } = await getHistoryApi();
+    const scan = scans.find((s) => s.scan_id === scanId);
+    return new Map((scan?.targets || []).filter((t) => t.success).map((t) => [t.telegram_id, t]));
+  } catch {
+    return new Map();
+  }
 }
 
 const MAX_DEAD_ATTEMPTS = 3;
+const RESULT_AFTER_NATIVE_MS = 200;
 const MAX_RETRY_ATTEMPTS = 6;   // QR меняется каждые 5с: не держим сканер из-за того, кого Пульс не пускает
 
 interface Props { active: boolean }
@@ -97,7 +108,7 @@ export function Scanner({ active }: Props) {
         ts.map((t) => {
           if (!ids.includes(t.id)) return t;
           const r = byId.get(t.id);
-          if (r?.success) return { ...t, status: r.already_marked ? 'already' : 'done', error: null, warning: r.warning };
+          if (r?.success) return { ...t, status: r.already_marked ? 'already' : 'done', error: null };
           if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           const attempts = t.attempts + 1;
           const error = r ? r.error : 'Нужно перезайти';
@@ -106,7 +117,14 @@ export function Scanner({ active }: Props) {
         }),
       );
     } catch {
-      setTargets((ts) => ts.map((t) => (ids.includes(t.id) && t.status === 'marking' ? { ...t, status: 'pending' } : t)));
+      // Ответ не дошёл (обрыв связи, долгий ответ), а сервер мог уже всех отметить:
+      // спрашиваем историю этого скана и показываем, кто реально отмечен.
+      const marked = await markedInScan(scanIdRef.current);
+      setTargets((ts) => ts.map((t) => {
+        if (!ids.includes(t.id) || t.status !== 'marking') return t;
+        const m = marked.get(t.id);
+        return m ? { ...t, status: m.already_marked ? 'already' : 'done', error: null } : { ...t, status: 'pending' };
+      }));
     } finally {
       inFlightRef.current = false;
     }
@@ -124,18 +142,25 @@ export function Scanner({ active }: Props) {
     if (ids.length) fireWave(text, ids);
   };
 
+  // Пока нативный сканер Telegram закрывается, WebView перерисовывается — попап в этот
+  // момент дёргается. Поэтому после нативного сканера открываем его с небольшой паузой.
+  const openResult = (afterNative: boolean) => {
+    if (afterNative) setTimeout(() => setResultOpen(true), RESULT_AFTER_NATIVE_MS);
+    else setResultOpen(true);
+  };
+
   // Завершение: все отметились/определились.
   useEffect(() => {
     if ((!scanning && !camOpen) || !targets.length) return;
     const openLeft = targets.some((t) => t.status === 'pending' || t.status === 'marking');
     if (openLeft) return;
     doneRef.current = true;
-    const allOk = targets.every((t) => (t.status === 'done' && !t.warning) || t.status === 'already' || t.status === 'skipped');
+    const allOk = targets.every((t) => t.status === 'done' || t.status === 'already' || t.status === 'skipped');
     hapticRef.current?.notificationOccurred?.(allOk ? 'success' : 'error');
     // Везде одинаково: закрываем сканер/камеру и показываем единый попап итога.
     if (scanning) { try { (webApp as any)?.closeScanQrPopup?.(); } catch {} setScanning(false); }
     if (camOpen) setCamOpen(false);
-    setResultOpen(true);
+    openResult(scanning);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets, scanning, camOpen]);
 
@@ -146,7 +171,7 @@ export function Scanner({ active }: Props) {
     const onClosed = () => {
       if (doneRef.current) return;
       setScanning(false);
-      if (targetsRef.current.length) setResultOpen(true);
+      if (targetsRef.current.length) openResult(true);
     };
     tg.onEvent('scanQrPopupClosed', onClosed);
     return () => tg.offEvent?.('scanQrPopupClosed', onClosed);
@@ -247,11 +272,11 @@ export function Scanner({ active }: Props) {
   const marked = targets.filter((t) => t.status === 'done' || t.status === 'already');
 
   // Показываем всех: кто отмечен, кто был отмечен раньше и кого не вышло отметить (с причиной).
-  const ResultList = () => (
-    <div class="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+  const resultList = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {targets.map((t) => (
         <div key={t.id} class="row" style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: 'var(--bg-2)', border: '1px solid var(--hairline)' }}>
-          <StatusBadge status={t.status === 'pending' ? 'failed' : t.status} warn={!!t.warning} />
+          <StatusBadge status={t.status === 'pending' ? 'failed' : t.status} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {t.is_self ? 'Ты' : t.name}
@@ -312,7 +337,7 @@ export function Scanner({ active }: Props) {
               <span class="display">{marked.length}</span><span class="faint"> / {targets.length}</span> отмечено
             </span>
           </div>
-          <ResultList />
+          {resultList()}
           <button class="btn" style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={rescan}>
             <IconScan size={19} stroke={2.2} /> Сканировать снова
           </button>
@@ -356,9 +381,10 @@ export function Scanner({ active }: Props) {
 
 function Popup({ title, onClose, children }: { title: string; onClose: () => void; children: any }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(5px)',
+    // Без размытия фона: на телефоне blur поверх всего экрана и таб-бара заметно тормозит анимацию.
+    <div class="popup-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.74)',
       display: 'grid', placeItems: 'center', padding: 16 }}>
-      <div class="panel enter" style={{ padding: 0, maxWidth: 440, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div class="panel popup-in" style={{ padding: 0, maxWidth: 440, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
         <div class="row" style={{ justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid var(--hairline)' }}>
           <h3 style={{ fontSize: 20 }}>{title}</h3>
           <button onClick={onClose} aria-label="Закрыть"
@@ -374,18 +400,15 @@ function Popup({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function statusNote(t: Target): string {
-  if (t.status === 'done') return t.warning ? `отмечен, но ${t.warning.charAt(0).toLowerCase()}${t.warning.slice(1)}` : 'отмечен';
+  if (t.status === 'done') return 'отмечен';
   if (t.status === 'already') return 'уже был отмечен на этой паре';
   if (t.status === 'skipped') return 'отметка на этой паре отключена';
   if (t.status === 'marking') return 'отмечаем…';
   return t.error || 'не отмечен';
 }
 
-function StatusBadge({ status, warn }: { status: Status; warn?: boolean }) {
+function StatusBadge({ status }: { status: Status }) {
   const box = { width: 30, height: 30, borderRadius: '50%', display: 'grid', placeItems: 'center', flex: 'none' } as const;
-  if (status === 'done' && warn) {
-    return <div style={{ ...box, background: 'var(--fail-dim)', color: 'var(--fail)' }}><IconCheck size={16} stroke={2.6} /></div>;
-  }
   if (status === 'done') {
     return <div style={{ ...box, background: 'var(--live-dim)', color: 'var(--live)' }}><IconCheck size={16} stroke={2.6} /></div>;
   }

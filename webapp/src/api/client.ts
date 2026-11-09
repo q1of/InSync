@@ -109,7 +109,6 @@ export interface MarkResult {
   retriable: boolean;
   opted_out: boolean;   // сам отключил отметку на этой паре — не ошибка
   already_marked: boolean;   // уже был отмечен на этой паре — не новая отметка
-  warning: string | null;    // отмечен, но по турникетам не в корпусе пары
 }
 export interface MarkResponse { results: MarkResult[]; total: number; successful: number; }
 
@@ -127,7 +126,10 @@ export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scan
     lesson_start: opts?.lessonStart ?? null,
     lesson_room: opts?.lessonRoom ?? null,
     lesson_building: opts?.lessonBuilding ?? null,
-  });
+  }, MARK_TIMEOUT_MS);
+
+// Дольше ждать нет смысла: после обрыва сканер сам сверит итог по истории.
+const MARK_TIMEOUT_MS = 20000;
 
 // Кого скан отметит вместе с пользователем (друзья и группа)
 export interface MarkTarget { telegram_id: number; name: string; }
@@ -147,8 +149,8 @@ export interface PassEvent { time: number; kind: 'enter' | 'exit' | 'move'; titl
 export interface PassDay { day: string; events: PassEvent[]; }
 export const getPassDayApi = (day: string) => api<PassDay>('GET', `/pass/day?day=${day}`);
 
-export interface ScanTarget { name: string; is_self: boolean; success: boolean; already_marked: boolean; error: string | null; }
-export interface Scan { created_at: number; lesson_name?: string | null; targets: ScanTarget[]; successful: number; total: number; }
+export interface ScanTarget { telegram_id: number; name: string; is_self: boolean; success: boolean; already_marked: boolean; error: string | null; }
+export interface Scan { created_at: number; lesson_name?: string | null; scan_id?: string | null; targets: ScanTarget[]; successful: number; total: number; }
 export const getHistoryApi = () =>
   api<{ scans: Scan[] }>('GET', '/attendance/history');
 

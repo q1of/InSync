@@ -96,8 +96,6 @@ class AttendanceResult(BaseModel):
     opted_out: bool = False
     # Уже был отмечен на этой паре (сам или другом) — не новая отметка
     already_marked: bool = False
-    # Отмечен, но по турникетам не в корпусе пары — отметка может не засчитаться
-    warning: Optional[str] = None
 
 class AttendanceResponse(BaseModel):
     results: List[AttendanceResult]

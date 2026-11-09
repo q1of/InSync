@@ -737,3 +737,29 @@ class TestPresenceCampuses:
         monkeypatch.setattr(acs_mod, "get_acs_events", events)
         asyncio.run(acs_mod.presence_warning(1, {}, "А-1", "В-78"))
         assert asked == [86399]
+
+
+class TestPresenceInNotification:
+    def test_warning_goes_only_to_notification(self, monkeypatch):
+        sent = {}
+
+        class Bot:
+            async def send_message(self, tid, text, **_):
+                sent[tid] = text
+
+        async def enabled(*_):
+            return True
+
+        async def presence(tid, cookies, room, building):
+            return "По турникетам не в корпусе — отметка может не засчитаться" if tid == 2 else None
+
+        monkeypatch.setattr(app_main, "bot", Bot())
+        monkeypatch.setattr(attendance, "notif_enabled", enabled)
+        monkeypatch.setattr(attendance, "presence_warning", presence)
+        results = [{"telegram_id": 2, "success": True}, {"telegram_id": 3, "success": True}]
+        asyncio.run(attendance._notify_marked_friends(
+            TelegramUser(telegram_id=1, display_name="Я"), results, "Матан", {2: {}, 3: {}}, "А-1", "В-78"))
+        assert "не в корпусе" in sent[2] and "не в корпусе" not in sent[3]
+
+    def test_scan_response_has_no_warning(self):
+        assert "warning" not in attendance.AttendanceResult.model_fields
