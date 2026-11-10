@@ -28,14 +28,18 @@ interface Target {
 }
 
 // Кто уже отмечен в этом скане по данным сервера (telegram_id → запись истории).
-async function markedInScan(scanId: string): Promise<Map<number, ScanTarget>> {
-  try {
-    const { scans } = await getHistoryApi();
-    const scan = scans.find((s) => s.scan_id === scanId);
-    return new Map((scan?.targets || []).filter((t) => t.success).map((t) => [t.telegram_id, t]));
-  } catch {
-    return new Map();
+// После обрыва сервер мог ещё дописывать историю — опрашиваем несколько раз.
+async function markedInScan(scanId: string, tries = 3): Promise<Map<number, ScanTarget>> {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const { scans } = await getHistoryApi();
+      const scan = scans.find((s) => s.scan_id === scanId);
+      const m = new Map((scan?.targets || []).filter((t) => t.success).map((t) => [t.telegram_id, t] as const));
+      if (m.size || i === tries - 1) return m;
+    } catch { /* пробуем ещё раз */ }
+    await new Promise((r) => setTimeout(r, 1200));
   }
+  return new Map();
 }
 
 const MAX_DEAD_ATTEMPTS = 3;
@@ -419,7 +423,7 @@ function StatusBadge({ status }: { status: Status }) {
     return <div style={box}><span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.18)', borderTopColor: 'var(--ink)', animation: 'spin 0.9s linear infinite', display: 'inline-block' }} /></div>;
   }
   if (status === 'failed') {
-    return <div style={{ ...box, background: 'var(--fail-dim)', color: 'var(--fail)' }}><IconX size={16} stroke={2.6} /></div>;
+    return <div style={{ ...box, background: 'var(--surface-2)', color: 'var(--ink-dim)' }}><IconX size={16} stroke={2.6} /></div>;
   }
   if (status === 'skipped') {
     return <div style={{ ...box, background: 'var(--bg-2)', color: 'var(--ink-faint)' }}><span style={{ width: 12, height: 2.6, borderRadius: 2, background: 'currentColor' }} /></div>;

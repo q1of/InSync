@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getHistoryApi, Scan, ScanTarget } from '../api/client';
-import { IconHistory, IconCheck } from '../components/icons';
+import { IconHistory, IconCheck, IconX } from '../components/icons';
 
 interface DayGroup { key: string; tag: string; dnum: number; dow: string; month: string; items: Scan[]; }
 
@@ -80,35 +80,25 @@ function IncomingBlock({ scan }: { scan: Scan }) {
 }
 
 function ScanBlock({ scan }: { scan: Scan }) {
-  const time = fmtTime(scan.created_at);
-  const targets = scan.targets || [];
-  const allOk = scan.successful === scan.total;
-  const accent = allOk ? 'var(--live)' : 'var(--fail)';
   const names = (list: ScanTarget[]) => list.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
-  const marked = targets.filter((t) => t.success && !t.already_marked);
-  const already = targets.filter((t) => t.already_marked);
-  const failed = targets.filter((t) => !t.success);
+  const marked = (scan.targets || []).filter((t) => t.success);   // отмечены (и кто был отмечен раньше)
+  const ok = marked.length > 0;
   return (
     <div class="panel" style={{ padding: '13px 14px' }}>
-      {/* Верх: время · статус */}
+      {/* Верх: время · галочка (серый крест, если никого не отметили) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
-        <span style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14 }}>{time}</span>
-        <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 13, color: accent }}>
-          {scan.successful}/{scan.total}
+        <span style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14 }}>{fmtTime(scan.created_at)}</span>
+        <span style={{ marginLeft: 'auto', flex: 'none', display: 'flex', color: ok ? 'var(--live)' : 'var(--ink-faint)' }}>
+          {ok ? <IconCheck size={17} stroke={2.6} /> : <IconX size={16} stroke={2.4} />}
         </span>
       </div>
 
       {/* Название пары — переносится */}
       <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{scan.lesson_name || 'Пара'}</div>
 
-      {/* Кого отметили, кто уже был отмечен и кого не вышло */}
-      {marked.length > 0 && <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>Отмечены: {names(marked)}</div>}
-      {already.length > 0 && <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>Уже были отмечены: {names(already)}</div>}
-      {failed.map((t, i) => (
-        <div key={i} style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4, color: 'var(--fail)' }}>
-          Не отмечен{t.is_self ? 'ы' : ''}: {t.is_self ? 'Вы' : t.name}{t.error ? ` — ${t.error}` : ''}
-        </div>
-      ))}
+      <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>
+        {ok ? `Отмечены: ${names(marked)}` : 'Никого не отметили'}
+      </div>
     </div>
   );
 }

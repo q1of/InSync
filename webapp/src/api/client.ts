@@ -128,8 +128,9 @@ export const markAttendanceApi = (qrData: string, opts?: { only?: number[]; scan
     lesson_building: opts?.lessonBuilding ?? null,
   }, MARK_TIMEOUT_MS);
 
-// Дольше ждать нет смысла: после обрыва сканер сам сверит итог по истории.
-const MARK_TIMEOUT_MS = 20000;
+// Отметка 10+ человек на «холодном» сервере занимает секунды, иногда десятки.
+// Ставим запас, чтобы не оборвать успешную волну; после обрыва сканер сверит итог по истории.
+const MARK_TIMEOUT_MS = 45000;
 
 // Кого скан отметит вместе с пользователем (друзья и группа)
 export interface MarkTarget { telegram_id: number; name: string; }
