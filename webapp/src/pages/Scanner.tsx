@@ -271,8 +271,10 @@ export function Scanner({ active }: Props) {
 
   const crew = crewList.length;
   // Друзья и группа вместе: «человек» склоняем по числу (2 человека, 5 человек, 21 человек).
-  const few = crew % 10 >= 2 && crew % 10 <= 4 && (crew % 100 < 12 || crew % 100 > 14);
-  const crewLine = crew ? `С тобой — ${crew} ${few ? 'человека' : 'человек'}` : 'Отметим только тебя';
+  // Считаем вместе с собой — как в карточке группы, чтобы числа совпадали.
+  const total = crew + 1;
+  const few = total % 10 >= 2 && total % 10 <= 4 && (total % 100 < 12 || total % 100 > 14);
+  const crewLine = crew ? `Отметим ${total} ${few ? 'человека' : 'человек'}` : 'Отметим только тебя';
   const marked = targets.filter((t) => t.status === 'done' || t.status === 'already');
 
   // Показываем всех: кто отмечен, кто был отмечен раньше и кого не вышло отметить (с причиной).
