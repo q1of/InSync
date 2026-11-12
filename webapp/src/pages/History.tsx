@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getHistoryApi, Scan, ScanTarget } from '../api/client';
+import { getHistoryApi, Scan } from '../api/client';
 import { IconHistory, IconCheck, IconX } from '../components/icons';
 
 interface DayGroup { key: string; tag: string; dnum: number; dow: string; month: string; items: Scan[]; }
@@ -79,25 +79,21 @@ function IncomingBlock({ scan }: { scan: Scan }) {
   );
 }
 
+// Мой скан: показываем только, отметился ли я сам, — без списка остальных.
 function ScanBlock({ scan }: { scan: Scan }) {
-  const names = (list: ScanTarget[]) => list.map((t) => (t.is_self ? 'Вы' : t.name)).join(', ');
-  const marked = (scan.targets || []).filter((t) => t.success);   // отмечены (и кто был отмечен раньше)
-  const ok = marked.length > 0;
+  const me = (scan.targets || []).find((t) => t.is_self);
+  const ok = !!me?.success;
   return (
     <div class="panel" style={{ padding: '13px 14px' }}>
-      {/* Верх: время · галочка (серый крест, если никого не отметили) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
         <span style={{ fontFamily: 'Unbounded, monospace', fontWeight: 700, fontSize: 14 }}>{fmtTime(scan.created_at)}</span>
         <span style={{ marginLeft: 'auto', flex: 'none', display: 'flex', color: ok ? 'var(--live)' : 'var(--ink-faint)' }}>
           {ok ? <IconCheck size={17} stroke={2.6} /> : <IconX size={16} stroke={2.4} />}
         </span>
       </div>
-
-      {/* Название пары — переносится */}
       <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{scan.lesson_name || 'Пара'}</div>
-
       <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>
-        {ok ? `Отмечены: ${names(marked)}` : 'Никого не отметили'}
+        {ok ? 'Отметились сами' : 'Вы не отметились'}
       </div>
     </div>
   );
