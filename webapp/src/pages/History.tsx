@@ -79,10 +79,11 @@ function IncomingBlock({ scan }: { scan: Scan }) {
   );
 }
 
-// Мой скан: показываем только, отметился ли я сам, — без списка остальных.
+// Мой скан: показываем только мой статус — «Вас отметил: <я>», без списка остальных.
 function ScanBlock({ scan }: { scan: Scan }) {
   const me = (scan.targets || []).find((t) => t.is_self);
   const ok = !!me?.success;
+  const who = scan.by?.[0] || 'Вы';
   return (
     <div class="panel" style={{ padding: '13px 14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
@@ -93,7 +94,7 @@ function ScanBlock({ scan }: { scan: Scan }) {
       </div>
       <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{scan.lesson_name || 'Пара'}</div>
       <div class="faint" style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.4 }}>
-        {ok ? 'Отметились сами' : 'Вы не отметились'}
+        {ok ? `Вас отметил: ${who}` : 'Вы не отметились'}
       </div>
     </div>
   );

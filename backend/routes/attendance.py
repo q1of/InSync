@@ -304,8 +304,10 @@ def _add_my_scan(row, me: int, index: dict, scans: list, self_marked: set) -> No
         bucket = ("legacy", row["qr_token"], (row["created_at"] or 0) // 120)  # окно 2 минуты
     scan = index.get(bucket)
     if scan is None:
+        # by — ник того, кто отметил (для своего скана это сам пользователь).
         scan = {"kind": "mine", "created_at": row["created_at"], "lesson_name": row["lesson_name"],
-                "scan_id": row["scan_id"], "targets": [], "successful": 0, "total": 0}
+                "scan_id": row["scan_id"], "by": [row["initiator_name"] or "Вы"],
+                "targets": [], "successful": 0, "total": 0}
         index[bucket] = scan
         scans.append(scan)
     elif not scan.get("lesson_name") and row["lesson_name"]:
