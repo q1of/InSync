@@ -17,7 +17,7 @@ from backend.services.mirea_client import ACS_ENTER, ACS_EXIT, get_acs_events, g
 logger = logging.getLogger(__name__)
 
 MSK = timezone(timedelta(hours=3))
-NOT_INSIDE = "По турникетам не в корпусе — отметка может не засчитаться"
+NOT_INSIDE = "По турникетам вы не в вузе — отметка может не засчитаться"
 PRESENCE_TIMEOUT_S = 6.0
 
 # telegram_id -> userId в Пульсе (не меняется, поэтому достаточно памяти процесса)
@@ -70,11 +70,13 @@ def presence_problem(events: list[dict], now: float, room: str | None, building:
                    room, building, len(past), last and last["kind"], zone)
     if not last or last["kind"] == ACS_EXIT or "неконтролируем" in zone.lower():
         return NOT_INSIDE
-    (lesson_campus, lesson_letter), (zone_campus, zone_letter) = lesson_place(room, building), zone_place(zone)
+    # Сверяем только кампус (адрес): Пироговка / Стромынка / Вернадского — они у турникетов
+    # и в расписании совпадают надёжно. Корпус/букву внутри кампуса НЕ сверяем: пары идут
+    # по разным корпусам одного адреса, а названия в Пульсе оформлены по-разному — ложные срабатывания.
+    lesson_campus, _ = lesson_place(room, building)
+    zone_campus, _ = zone_place(zone)
     if lesson_campus and zone_campus and not _same_campus(lesson_campus, zone_campus):
-        return f"По турникетам в другом корпусе ({zone}) — отметка может не засчитаться"
-    if lesson_letter and zone_letter and lesson_letter != zone_letter:
-        return f"По турникетам в другом корпусе ({zone}) — отметка может не засчитаться"
+        return f"По турникетам вы в другом кампусе ({zone}) — отметка может не засчитаться"
     return None
 
 
@@ -114,7 +116,7 @@ async def day_events(telegram_id: int, cookies: dict, day: date) -> dict:
 
 
 async def presence_warning(telegram_id: int, cookies: dict, room: str | None, building: str | None) -> str | None:
-    """Предупреждение для отметки, если по турникетам студент не в корпусе пары.
+    """Предупреждение, если по турникетам студента нет в вузе (или он в другом кампусе).
 
     Любой сбой (Пульс не ответил, нет id) — None: из-за проверки отметка не должна выглядеть хуже.
     """

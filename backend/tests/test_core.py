@@ -602,9 +602,9 @@ class TestPresence:
     def test_inside_right_building(self):
         assert acs_mod.presence_problem([self.ev(1, "В78 А 2эт ЦентральныйВход")], self.NOW, "А-213", "В-78") is None
 
-    def test_other_building(self):
-        problem = acs_mod.presence_problem([self.ev(1, "В78 Корпус И")], self.NOW, "А-213", "В-78")
-        assert "другом корпусе" in problem
+    def test_other_building_same_campus_is_ok(self):
+        # Другой корпус того же кампуса (В78) — не ошибка: букву внутри кампуса не сверяем.
+        assert acs_mod.presence_problem([self.ev(1, "В78 Корпус И")], self.NOW, "А-213", "В-78") is None
 
     def test_left_or_never_entered(self):
         assert acs_mod.presence_problem([], self.NOW, "А-213", "В-78") == acs_mod.NOT_INSIDE
@@ -721,7 +721,8 @@ class TestPresenceCampuses:
     def test_stromynka_zone(self):
         events = [{"time": self.NOW - 600, "kind": 1, "enter": "С20 1эт ЦентральныйВход", "exit": ""}]
         assert acs_mod.presence_problem(events, self.NOW, "435", "С-20") is None
-        assert "другом корпусе" in acs_mod.presence_problem(events, self.NOW, "А-213", "В-78")
+        # Пара на Вернадского (В78), а вошёл на Стромынке (С20) — разные адреса, предупреждаем.
+        assert "другом кампусе" in acs_mod.presence_problem(events, self.NOW, "А-213", "В-78")
 
     def test_check_asks_pulse_for_the_whole_day(self, monkeypatch):
         asked = []
