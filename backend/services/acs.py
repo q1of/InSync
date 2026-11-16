@@ -18,14 +18,10 @@ logger = logging.getLogger(__name__)
 
 MSK = timezone(timedelta(hours=3))
 NOT_INSIDE = "По турникетам вы не в вузе — отметка может не засчитаться"
-PRESENCE_TIMEOUT_S = 10.0   # проверка идёт в фоне, после ответа на скан
+PRESENCE_TIMEOUT_S = 6.0
 
 # telegram_id -> userId в Пульсе (не меняется, поэтому достаточно памяти процесса)
 _user_ids: dict[int, str] = {}
-# telegram_id -> (день проверки, видит ли Пульс его турникеты вообще)
-_tracked: dict[int, tuple[date, bool]] = {}
-TRACKED_LOOKBACK_DAYS = 14
-_REMOTE_RE = re.compile(r"дистан|онлайн|online|сдо\b|\bсдо|вебинар", re.IGNORECASE)
 
 _CAMPUS_RE = re.compile(r"([А-ЯЁ]{1,3})-?(\d{1,3})")
 _ZONE_CAMPUS_RE = re.compile(r"\s*([А-ЯЁ]{1,3})-?(\d{1,3})\b")
@@ -66,8 +62,6 @@ def _same_campus(a: str, b: str) -> bool:
 
 def presence_problem(events: list[dict], now: float, room: str | None, building: str | None) -> str | None:
     """Почему студента нет в корпусе пары по последнему событию турникетов (или None)."""
-    if _REMOTE_RE.search(f"{room or ''} {building or ''}"):
-        return None   # дистанционная пара — в вузе быть не нужно
     past = [e for e in events if e["time"] <= now + 60]
     last = past[-1] if past else None
     zone = (last["enter"] or last["exit"]) if last else ""
@@ -121,26 +115,6 @@ async def day_events(telegram_id: int, cookies: dict, day: date) -> dict:
     return {"error": None, "events": [describe(e) for e in res["events"]]}
 
 
-async def _turnstiles_tracked(telegram_id: int, cookies: dict, uid: str) -> bool:
-    """Есть ли у студента проходы за последние две недели.
-
-    В части кампусов и филиалов турникеты в Пульс не попадают — там пустой день не значит
-    «не пришёл», и предупреждать нельзя. Ответ держим до конца дня.
-    """
-    today = today_msk()
-    hit = _tracked.get(telegram_id)
-    if hit and hit[0] == today:
-        return hit[1]
-    start, _ = day_bounds(today - timedelta(days=TRACKED_LOOKBACK_DAYS))
-    _, end = day_bounds(today - timedelta(days=1))
-    res = await get_acs_events(cookies, uid, start, end)
-    if res.get("error"):
-        return False   # не знаем — молчим, повторим в следующий раз
-    tracked = bool(res["events"])
-    _tracked[telegram_id] = (today, tracked)
-    return tracked
-
-
 async def presence_warning(telegram_id: int, cookies: dict, room: str | None, building: str | None) -> str | None:
     """Предупреждение, если по турникетам студента нет в вузе (или он в другом кампусе).
 
@@ -157,12 +131,7 @@ async def presence_warning(telegram_id: int, cookies: dict, room: str | None, bu
         res = await get_acs_events(cookies, uid, start, end)
         if res.get("error"):
             return None
-        problem = presence_problem(res["events"], now, room, building)
-        # Сегодня проходов нет — предупреждаем, только если Пульс вообще видит турникеты этого студента.
-        if problem and not any(e["time"] <= now + 60 for e in res["events"]):
-            if not await _turnstiles_tracked(telegram_id, cookies, uid):
-                return None
-        return problem
+        return presence_problem(res["events"], now, room, building)
 
     try:
         return await asyncio.wait_for(_check(), timeout=PRESENCE_TIMEOUT_S)

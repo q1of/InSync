@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
 import { getSessionApi, getPendingApi } from './api/client';
-import { prefetchAll } from './api/prefetch';
 import { useTelegram } from './hooks/useTelegram';
 import { Scanner } from './pages/Scanner';
 import { Login } from './pages/Login';
@@ -69,9 +68,6 @@ export function App() {
   };
 
   useEffect(() => { boot(); }, []);
-
-  // Сразу после входа просим у сервера расписание и пропуск — к открытию вкладки они уже готовы.
-  useEffect(() => { if (hasSession) prefetchAll(); }, [hasSession]);
 
   useEffect(() => {
     if (!hasSession) return;
