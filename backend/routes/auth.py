@@ -1,6 +1,7 @@
 import html
 import logging
 import time
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,6 +14,9 @@ from backend.middleware.telegram_auth import get_current_user, TelegramUser
 from backend.services import mirea_service
 from backend.services.mirea_client import is_session_expired
 from backend.services.session_cache import session_cache
+from backend.services.ttl_cache import TTLCache
+from backend.routes.passcard import pass_cache
+from backend.services.acs import MSK, today_msk
 from backend.database import upsert_user, update_session, get_user, clear_session, notif_enabled
 
 logger = logging.getLogger(__name__)
@@ -20,9 +24,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # Короткие кеши, чтобы не дёргать Пульс на каждый открытый профиль.
 _SESSION_CHECK_TTL = 60      # проверка живости сессии
-_SCHEDULE_TTL = 3600         # расписание меняется редко
+# Расписание: держим 10 минут — замену пары увидят быстро, а повторные заходы не ждут Пульс.
+_SCHEDULE_TTL = 600
+_SCHEDULE_DAYS = 7           # всегда берём неделю целиком, меньшие запросы режем из неё
 _session_check_cache: dict[int, tuple[float, dict]] = {}
-_schedule_cache: dict[tuple[int, int], tuple[float, list]] = {}
+_schedule_cache = TTLCache(max_items=1500)   # неделя пар ≈ 30 КБ — до ~45 МБ на всех
 
 
 async def _finish_login(user: TelegramUser, result: dict, mirea_login: str | None) -> LoginResponse:
@@ -114,8 +120,8 @@ async def logout(user: TelegramUser = Depends(get_current_user)):
     await clear_session(user.telegram_id)
     await session_cache.invalidate(user.telegram_id)
     _session_check_cache.pop(user.telegram_id, None)
-    for k in [k for k in _schedule_cache if k[0] == user.telegram_id]:
-        _schedule_cache.pop(k, None)
+    _schedule_cache.drop(lambda k: k == user.telegram_id)
+    pass_cache.drop(lambda k: k[0] == user.telegram_id)
     return {"success": True}
 
 
@@ -189,12 +195,11 @@ async def get_session_status(check: bool = True, user: TelegramUser = Depends(ge
 
 @router.get("/schedule")
 async def schedule(days: int = 7, user: TelegramUser = Depends(get_current_user)):
-    """Расписание студента на N дней. Кешируется на час (меняется редко)."""
-    days = max(1, min(days, 14))
-    key = (user.telegram_id, days)
-    cached = _schedule_cache.get(key)
-    if cached and time.time() - cached[0] < _SCHEDULE_TTL:
-        return {"lessons": cached[1]}
+    """Расписание студента на N дней (до недели). Неделя кешируется на 10 минут."""
+    days = max(1, min(days, _SCHEDULE_DAYS))
+    cached = _schedule_cache.get(user.telegram_id, _SCHEDULE_TTL)
+    if cached is not None:
+        return {"lessons": _first_days(cached, days)}
 
     cookies = await session_cache.get_session(user.telegram_id)
     if not cookies:
@@ -208,7 +213,17 @@ async def schedule(days: int = 7, user: TelegramUser = Depends(get_current_user)
                 await session_cache.set_decrypted(user.telegram_id, cookies)
     if not cookies:
         raise HTTPException(status_code=401, detail="Нет активной сессии")
-    lessons = await mirea_service.fetch_schedule(cookies, days=days)
-    if lessons:   # пустой ответ может быть сбоем Пульса — не закрепляем его на час
-        _schedule_cache[key] = (time.time(), lessons)
-    return {"lessons": lessons}
+    # Пустой ответ может быть сбоем Пульса — его не кешируем.
+    lessons = await _schedule_cache.fetch(
+        user.telegram_id, _SCHEDULE_TTL,
+        lambda: mirea_service.fetch_schedule(cookies, days=_SCHEDULE_DAYS), keep=bool)
+    return {"lessons": _first_days(lessons, days)}
+
+
+def _first_days(lessons: list, days: int) -> list:
+    """Пары за первые `days` дней начиная с сегодняшнего (по Москве)."""
+    if days >= _SCHEDULE_DAYS:
+        return lessons
+    last = today_msk() + timedelta(days=days)
+    return [l for l in lessons
+            if not l.get("start_epoch") or datetime.fromtimestamp(l["start_epoch"], MSK).date() < last]

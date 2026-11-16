@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getPassDayApi, PassDay } from '../api/client';
+import { PassDay } from '../api/client';
+import { passDay } from '../api/prefetch';
 import { IconPass, IconChevron } from '../components/icons';
 import { useTelegram } from '../hooks/useTelegram';
 
@@ -30,8 +31,11 @@ export function Pass() {
   useEffect(() => {
     let alive = true;
     setData(null); setError(null);
-    getPassDayApi(day)
-      .then((r) => { if (alive) setData(r); })
+    passDay(day)
+      .then((r) => {
+        if (alive) setData(r);
+        passDay(shiftDay(day, -1)).catch(() => {});   // предыдущий день — заранее, листать без ожидания
+      })
       .catch((e) => { if (alive) setError(e?.message || 'Не удалось загрузить события'); });
     return () => { alive = false; };
   }, [day]);

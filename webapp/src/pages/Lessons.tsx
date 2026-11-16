@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
-import { getScheduleApi, getOptoutsApi, setOptoutApi, Lesson } from '../api/client';
+import { getOptoutsApi, setOptoutApi, Lesson } from '../api/client';
 import { HistoryList } from './History';
+import { schedule } from '../api/prefetch';
 import { thumbStyle } from '../components/segment';
 import { useTelegram } from '../hooks/useTelegram';
 import { IconCalendar } from '../components/icons';
@@ -47,7 +48,7 @@ export function Lessons() {
   const [off, setOff] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    getScheduleApi(7).then((r) => setLessons(r.lessons)).catch(() => setLessons([]));
+    schedule().then((r) => setLessons(r.lessons)).catch(() => setLessons([]));
     getOptoutsApi().then((r) => setOff(new Set(r.start_epochs))).catch(() => {});
   }, []);
 

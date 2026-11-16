@@ -6,6 +6,7 @@
 """
 import asyncio
 import base64
+import time
 
 import httpx
 import pytest
@@ -20,6 +21,7 @@ from backend.services.mirea_client import (
 )
 from backend.services.pulse_auth import PulseLogin, _otp_challenge
 from backend.routes.attendance import _is_retriable
+from backend.services.ttl_cache import TTLCache
 
 UUID = "12345678-1234-1234-1234-123456789abc"
 
@@ -512,11 +514,65 @@ class TestScheduleCache:
         async def empty(*_, **__):
             return []
 
-        auth._schedule_cache.clear()
+        monkeypatch.setattr(auth, "_schedule_cache", TTLCache())
         monkeypatch.setattr(auth.session_cache, "get_session", session)
         monkeypatch.setattr(mirea_service, "fetch_schedule", empty)
         asyncio.run(auth.schedule(7, TelegramUser(telegram_id=1, display_name="Я")))
-        assert auth._schedule_cache == {}
+        assert auth._schedule_cache.get(1, 999) is None
+
+    def test_week_is_fetched_once_and_sliced(self, monkeypatch):
+        calls = []
+        now = time.time()
+
+        async def session(_):
+            return {"a": "1"}
+
+        async def week(_cookies, days):
+            calls.append(days)
+            await asyncio.sleep(0.01)
+            return [{"name": "сегодня", "start_epoch": now}, {"name": "через 3 дня", "start_epoch": now + 3 * 86400}]
+
+        monkeypatch.setattr(auth, "_schedule_cache", TTLCache())
+        monkeypatch.setattr(auth.session_cache, "get_session", session)
+        monkeypatch.setattr(mirea_service, "fetch_schedule", week)
+        me = TelegramUser(telegram_id=1, display_name="Я")
+
+        async def both():
+            return await asyncio.gather(auth.schedule(7, me), auth.schedule(1, me))
+
+        full, one = asyncio.run(both())
+        assert calls == [7]   # параллельные запросы — один поход в Пульс
+        assert len(full["lessons"]) == 2
+        assert [l["name"] for l in one["lessons"]] == ["сегодня"]
+
+
+class TestTTLCache:
+    def test_inflight_requests_share_one_load(self):
+        cache, calls = TTLCache(), []
+
+        async def load():
+            calls.append(1)
+            await asyncio.sleep(0.01)
+            return {"events": []}
+
+        async def run():
+            return await asyncio.gather(*(cache.fetch("k", 30, load) for _ in range(3)))
+
+        assert len(asyncio.run(run())) == 3 and calls == [1]
+
+    def test_errors_are_not_kept(self):
+        cache = TTLCache()
+
+        async def bad():
+            return {"error": "Пульс не ответил"}
+
+        asyncio.run(cache.fetch("k", 30, bad, keep=lambda r: not r.get("error")))
+        assert cache.get("k", 30) is None
+
+    def test_expired_value_is_reloaded(self):
+        cache = TTLCache()
+        cache.put("k", 1)
+        assert cache.get("k", 30) == 1 and cache.get("k", 0) is None
 
 
 class TestDebugFlag:
@@ -736,8 +792,42 @@ class TestPresenceCampuses:
 
         monkeypatch.setattr(acs_mod, "pulse_user_id", uid)
         monkeypatch.setattr(acs_mod, "get_acs_events", events)
+        monkeypatch.setattr(acs_mod, "_tracked", {})
         asyncio.run(acs_mod.presence_warning(1, {}, "А-1", "В-78"))
-        assert asked == [86399]
+        assert asked[0] == 86399
+
+    @pytest.mark.parametrize("room,building", [
+        ("Дистанционно", ""), ("СДО", ""), ("", "Онлайн"), ("А-213 (вебинар)", "В-78"),
+    ])
+    def test_remote_lesson_is_never_a_problem(self, room, building):
+        assert acs_mod.presence_problem([], self.NOW, room, building) is None
+
+    def _pulse(self, monkeypatch, history):
+        calls = []
+
+        async def uid(*_):
+            return "u"
+
+        async def events(_cookies, _uid, start, end):
+            calls.append(end - start)
+            # запрос за сегодня — пусто; запрос за прошлые две недели — history
+            return {"error": None, "events": history if end - start > 86400 else []}
+
+        monkeypatch.setattr(acs_mod, "pulse_user_id", uid)
+        monkeypatch.setattr(acs_mod, "get_acs_events", events)
+        monkeypatch.setattr(acs_mod, "_tracked", {})
+        return calls
+
+    def test_campus_without_turnstiles_in_pulse_stays_silent(self, monkeypatch):
+        # Филиал/кампус, где проходы в Пульс не попадают: пустой день — не повод пугать.
+        self._pulse(monkeypatch, history=[])
+        assert asyncio.run(acs_mod.presence_warning(1, {}, "101", "Фрязино")) is None
+
+    def test_tracked_student_without_entry_is_warned_and_lookup_cached(self, monkeypatch):
+        calls = self._pulse(monkeypatch, history=[{"time": 1, "kind": 1, "enter": "С20", "exit": ""}])
+        assert asyncio.run(acs_mod.presence_warning(1, {}, "435", "С-20")) == acs_mod.NOT_INSIDE
+        assert asyncio.run(acs_mod.presence_warning(1, {}, "435", "С-20")) == acs_mod.NOT_INSIDE
+        assert len([c for c in calls if c > 86400]) == 1   # история проходов — раз в день
 
 
 class TestPresenceInNotification:

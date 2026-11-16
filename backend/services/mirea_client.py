@@ -562,7 +562,7 @@ async def get_schedule(session_cookies: dict, days: int = 7) -> list[dict]:
         if not ok:
             return []
         now = datetime.now()
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(7)   # неделя — одной волной
 
         async def _day(offset: int) -> list[Lesson]:
             dt = now + timedelta(days=offset)
