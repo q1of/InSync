@@ -42,9 +42,8 @@ async function markedInScan(scanId: string, tries = 3): Promise<Map<number, Scan
   return new Map();
 }
 
-const MAX_DEAD_ATTEMPTS = 3;
 const RESULT_AFTER_NATIVE_MS = 200;
-const MAX_RETRY_ATTEMPTS = 6;   // QR меняется каждые 5с: не держим сканер из-за того, кого Пульс не пускает
+const MAX_ATTEMPTS = 3;   // максимум 3 QR на человека: дальше сканер не держим
 
 interface Props { active: boolean }
 
@@ -116,7 +115,7 @@ export function Scanner({ active }: Props) {
           if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           const attempts = t.attempts + 1;
           const error = r ? r.error : 'Нужно перезайти';
-          if (attempts > (r?.retriable ? MAX_RETRY_ATTEMPTS : MAX_DEAD_ATTEMPTS)) return { ...t, status: 'failed', error, attempts };
+          if (attempts >= MAX_ATTEMPTS) return { ...t, status: 'failed', error, attempts };
           return { ...t, status: 'pending', error, attempts };
         }),
       );
