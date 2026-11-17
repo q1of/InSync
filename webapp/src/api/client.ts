@@ -20,7 +20,29 @@ const getInitData = (): string => {
 
 const BASE_URL = '/api';
 
+// Запросы на чтение без своего таймаута: подвисшее соединение не должно крутить
+// загрузку вечно — бросаем его и пробуем ещё раз. Медленный Пульс (расписание с нуля)
+// в 20 с укладывается, а сервер к повтору уже держит ответ в своём кеше.
+const READ_TIMEOUT_MS = 20000;
+const READ_RETRY_DELAY_MS = 600;
+
 async function api<T = any>(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<T> {
+  if (method !== 'GET' || timeoutMs !== undefined) return request<T>(method, path, body, timeoutMs);
+  try {
+    return await request<T>(method, path, body, READ_TIMEOUT_MS);
+  } catch (e: any) {
+    if (e?.status) throw e;   // ответ сервера — повтор не поможет
+    await new Promise((r) => setTimeout(r, READ_RETRY_DELAY_MS));
+    try {
+      return await request<T>(method, path, body, READ_TIMEOUT_MS);
+    } catch (e2: any) {
+      if (e2?.status) throw e2;
+      throw new Error('Нет связи с сервером');
+    }
+  }
+}
+
+async function request<T = any>(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<T> {
   const initData = getInitData();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

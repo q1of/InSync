@@ -40,15 +40,31 @@ function buildDays(lessons: Lesson[]): Day[] {
   return days;
 }
 
+// Расписание, уже загруженное в этом открытии приложения: при возврате на вкладку
+// показываем его сразу и тихо обновляем. Живёт только в памяти — при следующем
+// открытии приложения грузится заново.
+let memo: Lesson[] | null = null;
+
 export function Lessons() {
   const { haptic } = useTelegram();
   const [tab, setTab] = useState<'schedule' | 'history'>('schedule');
-  const [lessons, setLessons] = useState<Lesson[] | null>(null);
+  const [lessons, setLessons] = useState<Lesson[] | null>(memo);
+  const [failed, setFailed] = useState(false);
   const [off, setOff] = useState<Set<number>>(new Set());
 
+  const load = () => {
+    setFailed(false);
+    let alive = true;
+    getScheduleApi(7)
+      .then((r) => { memo = r.lessons; if (alive) setLessons(r.lessons); })
+      .catch(() => { if (alive && memo == null) setFailed(true); });   // уже что-то показано — оставляем
+    return () => { alive = false; };
+  };
+
   useEffect(() => {
-    getScheduleApi(7).then((r) => setLessons(r.lessons)).catch(() => setLessons([]));
+    const stop = load();
     getOptoutsApi().then((r) => setOff(new Set(r.start_epochs))).catch(() => {});
+    return stop;
   }, []);
 
   const now = Date.now() / 1000;
@@ -80,7 +96,13 @@ export function Lessons() {
 
       {tab === 'schedule' && (
         <div class="enter">
-          {lessons == null ? (
+          {lessons == null && failed ? (
+            <div class="empty">
+              <p style={{ fontSize: 14, marginBottom: 14 }}>Не удалось загрузить расписание</p>
+              <button class="btn" style={{ width: 'auto', padding: '12px 22px', margin: '0 auto' }}
+                onClick={() => { haptic?.impactOccurred?.('light'); load(); }}>Повторить</button>
+            </div>
+          ) : lessons == null ? (
             <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><div class="spinner" /></div>
           ) : days.length === 0 ? (
             <div class="empty">
