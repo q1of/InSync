@@ -212,13 +212,13 @@ export const getPendingApi = () =>
   api<PendingReq[]>('GET', '/friends/pending');
 
 export const setMarkingApi = (friendTelegramId: number, enabled: boolean) =>
-  api('POST', '/friends/marking', { friend_telegram_id: friendTelegramId, enabled });
+  checked(api('POST', '/friends/marking', { friend_telegram_id: friendTelegramId, enabled }));
 
 export const acceptFriendApi = (requestId: number) =>
   checked(api('POST', '/friends/accept', { request_id: requestId }));
 
 export const rejectFriendApi = (requestId: number) =>
-  api('POST', '/friends/reject', { request_id: requestId });
+  checked(api('POST', '/friends/reject', { request_id: requestId }));
 
 export const removeFriendApi = (friendId: number) =>
-  api('DELETE', `/friends/${friendId}`);
+  checked(api('DELETE', `/friends/${friendId}`));

@@ -119,7 +119,8 @@ export function Scanner({ active }: Props) {
           if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           const attempts = t.attempts + 1;
           const error = r ? r.error : 'Нужно перезайти';
-          if (attempts >= MAX_ATTEMPTS) return { ...t, status: 'failed', error, attempts };
+          // Слетевшая сессия и подобное новым QR не лечится — сразу итог, без «Досканировать».
+          if (attempts >= MAX_ATTEMPTS || !r?.retriable) return { ...t, status: 'failed', error, attempts };
           return { ...t, status: 'pending', error, attempts };
         }),
       );

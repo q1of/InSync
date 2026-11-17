@@ -234,10 +234,12 @@ async def set_optout(
         await db.commit()
 
 
-async def opted_out_now(telegram_ids: List[int], now: int, grace: int = 1800) -> dict:
+async def opted_out_now(telegram_ids: List[int], now: int, grace: int = 300) -> dict:
     """Для каждого id: название отключённой пары, если она идёт прямо сейчас (±grace).
 
     Окно пары сохраняется при отключении, поэтому расписание на скане дёргать не нужно.
+    Запас — 5 минут: перерыв между парами в МИРЭА 10 минут, и с большим запасом
+    отключение одной пары задевало соседнюю (отключил 9:00 — не отметили на 10:40).
     """
     if not telegram_ids:
         return {}

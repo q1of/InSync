@@ -57,7 +57,17 @@ async def send_request(from_id: int, to_id: int) -> dict:
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
-                    return {"success": False, "error": f"Заявка уже существует ({row['status']})"}
+                    error = "Вы уже друзья" if row["status"] == "accepted" else "Заявка уже отправлена"
+                    return {"success": False, "error": error}
+
+            # Он уже звал нас в друзья — встречная заявка просто принимает его.
+            async with db.execute(
+                "SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'",
+                (to_id, from_id),
+            ) as cursor:
+                if await cursor.fetchone():
+                    res = await accept_request(from_id, to_id)
+                    return {**res, "accepted": True} if res.get("success") else res
 
             # Создаём заявку
             await db.execute(
