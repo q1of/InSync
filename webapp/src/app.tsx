@@ -12,8 +12,10 @@ import { IconScan, IconUsers, IconCalendar, IconUser, IconPass } from './compone
 // «Группа» живёт внутри «Друзей», чтобы снизу было не больше пяти вкладок.
 type Tab = 'scanner' | 'lessons' | 'pass' | 'friends' | 'profile';
 
-const BOOT_ATTEMPTS = 3;
-const BOOT_TIMEOUT_MS = 6000;
+// Обычно сервер отвечает меньше чем за секунду. Если соединение подвисло (у мобильных
+// операторов такое бывает), быстрее бросить его и открыть новое, чем ждать: поэтому
+// первая попытка короткая, следующие — длиннее, для по-настоящему медленной сети.
+const BOOT_TIMEOUTS_MS = [2500, 5000, 10000];
 const BOOT_RETRY_DELAY_MS = 1500;
 
 const TABS: { id: Tab; label: string; Icon: any }[] = [
@@ -47,9 +49,9 @@ export function App() {
   const boot = async () => {
     setInit(true);
     setBootFailed(false);
-    for (let i = 0; i < BOOT_ATTEMPTS; i++) {
+    for (let i = 0; i < BOOT_TIMEOUTS_MS.length; i++) {
       try {
-        const s = await getSessionApi(false, BOOT_TIMEOUT_MS);
+        const s = await getSessionApi(false, BOOT_TIMEOUTS_MS[i]);
         setHasSession(s.logged_in);
         setInit(false);
         return;
@@ -60,7 +62,7 @@ export function App() {
           setInit(false);
           return;
         }
-        if (e?.status && i < BOOT_ATTEMPTS - 1) await new Promise((r) => setTimeout(r, BOOT_RETRY_DELAY_MS));
+        if (e?.status && i < BOOT_TIMEOUTS_MS.length - 1) await new Promise((r) => setTimeout(r, BOOT_RETRY_DELAY_MS));
       }
     }
     setBootFailed(true);
