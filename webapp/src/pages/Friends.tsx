@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import {
   getFriendsApi, getPendingApi, sendFriendRequestApi, acceptFriendApi,
   rejectFriendApi, removeFriendApi, setMarkingApi, Friend, PendingReq,
@@ -134,13 +135,16 @@ export function Friends({ onPendingChange, inviteCode }: Props) {
         </div>
       )}
 
-      {toast && (
+      {/* Уведомление — прямо в body: анимация появления вкладки (transform) иначе
+          привязывает position: fixed к ней, и плашка уезжает в конец длинного списка. */}
+      {toast && createPortal(
         <div style={{ position: 'fixed', bottom: 'calc(var(--tab-h) + 18px)', left: 20, right: 20, maxWidth: 480, margin: '0 auto',
           padding: '13px 16px', borderRadius: 'var(--r-md)', textAlign: 'center', fontWeight: 600, zIndex: 150,
           background: toast.ok ? 'var(--bg-2)' : 'var(--miss-dim)', color: toast.ok ? 'var(--ink)' : 'var(--miss)',
           border: '1px solid ' + (toast.ok ? 'var(--hairline-2)' : 'rgba(255,91,123,0.4)'), animation: 'enter 0.3s both' }}>
           {toast.text}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
