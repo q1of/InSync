@@ -40,18 +40,12 @@ export function Friends({ onPendingChange, inviteCode }: Props) {
     e.preventDefault();
     const id = addId.trim();
     if (!id) return;
-    try {
-      const res: any = await sendFriendRequestApi(id);
-      setAddId('');
-      // Он уже звал тебя в друзья — встречная заявка сразу делает вас друзьями.
-      if (res?.accepted) { flash('Вы теперь друзья'); load(); } else flash('Заявка отправлена');
-      haptic?.notificationOccurred?.('success');
-    }
+    try { await sendFriendRequestApi(id); setAddId(''); flash('Заявка отправлена'); haptic?.notificationOccurred?.('success'); }
     catch (err: any) { flash(err.message || 'Не удалось', false); haptic?.notificationOccurred?.('error'); }
   };
   const accept = async (tid: number) => { try { await acceptFriendApi(tid); haptic?.impactOccurred?.('light'); load(); } catch (e: any) { flash(e.message || 'Ошибка', false); } };
-  const reject = async (tid: number) => { try { await rejectFriendApi(tid); load(); } catch (e: any) { flash(e.message || 'Ошибка', false); } };
-  const doRemove = async (tid: number) => { try { await removeFriendApi(tid); haptic?.impactOccurred?.('medium'); load(); } catch (e: any) { flash(e.message || 'Не удалось удалить', false); } };
+  const reject = async (tid: number) => { try { await rejectFriendApi(tid); load(); } catch {} };
+  const doRemove = async (tid: number) => { try { await removeFriendApi(tid); haptic?.impactOccurred?.('medium'); load(); } catch {} };
   const remove = (tid: number, name?: string | null) => {
     const msg = `Удалить ${name || 'этого друга'} из друзей?`;
     if (webApp?.showConfirm) webApp.showConfirm(msg, (ok: boolean) => { if (ok) doRemove(tid); });

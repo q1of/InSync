@@ -87,12 +87,6 @@ dp.message.middleware(AuthMiddleware())
 dp.callback_query.middleware(AuthMiddleware())
 
 
-def _tg_name(u: types.User) -> str:
-    """Имя как в Mini App (telegram_auth): «Имя Фамилия». Раньше вход через чат писал
-    @username, и имя в истории/у друзей менялось в зависимости от способа входа."""
-    return f"{u.first_name or ''} {u.last_name or ''}".strip() or str(u.id)
-
-
 class AuthState(StatesGroup):
     waiting_for_login = State()
     waiting_for_password = State()
@@ -176,7 +170,7 @@ async def process_password(message: types.Message, state: FSMContext):
 
     await upsert_user(
         telegram_id=message.from_user.id,
-        display_name=_tg_name(message.from_user),
+        display_name=message.from_user.username or message.from_user.first_name,
         mirea_login=login,
         group_name=result.get("group_name"),
         username=message.from_user.username,
@@ -223,7 +217,7 @@ async def process_2fa(message: types.Message, state: FSMContext):
 
     await upsert_user(
         telegram_id=message.from_user.id,
-        display_name=_tg_name(message.from_user),
+        display_name=message.from_user.username or message.from_user.first_name,
         mirea_login=data.get("login"),
         group_name=result.get("group_name"),
         username=message.from_user.username,

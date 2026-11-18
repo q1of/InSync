@@ -42,8 +42,9 @@ async function markedInScan(scanId: string, tries = 3): Promise<Map<number, Scan
   return new Map();
 }
 
+const MAX_DEAD_ATTEMPTS = 3;
 const RESULT_AFTER_NATIVE_MS = 200;
-const MAX_ATTEMPTS = 3;   // максимум 3 QR на человека: дальше сканер не держим
+const MAX_RETRY_ATTEMPTS = 6;   // QR меняется каждые 5с: не держим сканер из-за того, кого Пульс не пускает
 
 interface Props { active: boolean }
 
@@ -74,10 +75,6 @@ export function Scanner({ active }: Props) {
   useEffect(() => { hapticRef.current = haptic; }, [haptic]);
   useEffect(() => { targetsRef.current = targets; }, [targets]);
   useEffect(() => { activeRef.current = active; }, [active]);
-  const scanningRef = useRef(false);
-  useEffect(() => { scanningRef.current = scanning; }, [scanning]);
-  // Была ли уже хоть одна попытка отметки в этом скане.
-  const hadAttempt = () => targetsRef.current.some((t) => t.attempts > 0 || t.status !== 'pending');
 
   const [sessionBad, setSessionBad] = useState(false);
 
@@ -119,8 +116,7 @@ export function Scanner({ active }: Props) {
           if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           const attempts = t.attempts + 1;
           const error = r ? r.error : 'Нужно перезайти';
-          // Слетевшая сессия и подобное новым QR не лечится — сразу итог, без «Досканировать».
-          if (attempts >= MAX_ATTEMPTS || !r?.retriable) return { ...t, status: 'failed', error, attempts };
+          if (attempts > (r?.retriable ? MAX_RETRY_ATTEMPTS : MAX_DEAD_ATTEMPTS)) return { ...t, status: 'failed', error, attempts };
           return { ...t, status: 'pending', error, attempts };
         }),
       );
@@ -144,23 +140,10 @@ export function Scanner({ active }: Props) {
     if (!isAttendanceQr(text)) return;
     const token = qrToken(text);
     if (!token || token === lastTokenRef.current) return;
-    if (inFlightRef.current) return;   // прошлая отметка ещё идёт — ждём её, камеру не закрываем
     lastTokenRef.current = token;
+    hapticRef.current?.impactOccurred?.('light');
     const ids = targetsRef.current.filter((t) => t.status === 'pending').map((t) => t.id);
-    if (!ids.length) return;
-    // QR пары пойман: камеру сразу убираем, а ход отметки показываем в нашем окне —
-    // так видно, что скан прошёл, и не кажется, что всё зависло.
-    doneRef.current = true;
-    hapticRef.current?.impactOccurred?.('heavy');
-    fireWave(text, ids);
-    closeScannerShowResult();
-  };
-
-  const closeScannerShowResult = () => {
-    const wasNative = scanningRef.current;
-    if (wasNative) { try { (webApp as any)?.closeScanQrPopup?.(); } catch {} setScanning(false); }
-    setCamOpen(false);
-    openResult(wasNative);
+    if (ids.length) fireWave(text, ids);
   };
 
   // Пока нативный сканер Telegram закрывается, WebView перерисовывается — попап в этот
@@ -170,26 +153,29 @@ export function Scanner({ active }: Props) {
     else setResultOpen(true);
   };
 
-  // Отметка дошла до итога (никого «в процессе») — вибрация: успех или «не всех».
-  const wasMarkingRef = useRef(false);
+  // Завершение: все отметились/определились.
   useEffect(() => {
-    const marking = targets.some((t) => t.status === 'marking');
-    if (wasMarkingRef.current && !marking) {
-      const allOk = targets.every((t) => t.status === 'done' || t.status === 'already' || t.status === 'skipped');
-      hapticRef.current?.notificationOccurred?.(allOk ? 'success' : 'warning');
-    }
-    wasMarkingRef.current = marking;
-  }, [targets]);
+    if ((!scanning && !camOpen) || !targets.length) return;
+    const openLeft = targets.some((t) => t.status === 'pending' || t.status === 'marking');
+    if (openLeft) return;
+    doneRef.current = true;
+    const allOk = targets.every((t) => t.status === 'done' || t.status === 'already' || t.status === 'skipped');
+    hapticRef.current?.notificationOccurred?.(allOk ? 'success' : 'error');
+    // Везде одинаково: закрываем сканер/камеру и показываем единый попап итога.
+    if (scanning) { try { (webApp as any)?.closeScanQrPopup?.(); } catch {} setScanning(false); }
+    if (camOpen) setCamOpen(false);
+    openResult(scanning);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targets, scanning, camOpen]);
 
-  // Пользователь сам закрыл нативный сканер, не поймав QR.
+  // Пользователь сам закрыл нативный сканер.
   useEffect(() => {
     const tg: any = webApp;
     if (!tg?.onEvent) return;
     const onClosed = () => {
       if (doneRef.current) return;
-      doneRef.current = true;
       setScanning(false);
-      if (hadAttempt()) openResult(true);   // это был «досканировать» — возвращаем окно итога
+      if (targetsRef.current.length) openResult(true);
     };
     tg.onEvent('scanQrPopupClosed', onClosed);
     return () => tg.offEvent?.('scanQrPopupClosed', onClosed);
@@ -259,42 +245,29 @@ export function Scanner({ active }: Props) {
     return list;
   };
 
-  // Открыть камеру (нативный сканер Telegram или нашу на ПК) для тех, кто ещё не отмечен.
-  const openScanner = async (text: string) => {
-    doneRef.current = false;
-    lastTokenRef.current = null;
-    setResultOpen(false);
+  const startScan = async () => {
+    const list = prepare();
+    if (!list.length) return;
     // На быстрый тап сразу после открытия SDK может ещё грузиться.
     const tg = await telegramReady(SDK_WAIT_MS);
     if (nativeSupported(tg)) {
+      setResultOpen(false);
       setScanning(true);
-      scanningRef.current = true;
       try {
-        tg.showScanQrPopup({ text }, (qr: string) => { handleQr(qr); return false; });
-      } catch { setScanning(false); scanningRef.current = false; }
+        tg.showScanQrPopup({ text: 'Наведи на QR-код пары' }, (text: string) => { handleQr(text); return false; });
+      } catch { setScanning(false); }
     } else {
       setCamOpen(true);   // десктоп: наш попап с камерой
     }
   };
 
-  const startScan = () => {
-    if (!prepare().length) return;
-    openScanner('Наведи на QR-код пары');
+  const rescan = () => {
+    setResultOpen(false);
+    if (camOpen) { prepare(); } else { startScan(); }
   };
 
-  // Досканировать только тех, кого не вышло отметить с прошлого QR.
-  const retryScan = () => {
-    hapticRef.current?.impactOccurred?.('light');
-    prewarmApi().catch(() => {});
-    openScanner('Наведи на QR — досканируем остальных');
-  };
-
-  // На ПК: закрыли камеру, не поймав QR.
-  const closeCamera = () => {
-    doneRef.current = true;
-    setCamOpen(false);
-    if (hadAttempt()) setResultOpen(true);
-  };
+  // На ПК: закрыли камеру — показываем попап итога (как на телефоне после скана).
+  const closeCamera = () => { doneRef.current = true; setCamOpen(false); setResultOpen(true); };
 
   const crew = crewList.length;
   // Друзья и группа вместе: «человек» склоняем по числу (2 человека, 5 человек, 21 человек).
@@ -303,8 +276,6 @@ export function Scanner({ active }: Props) {
   const few = total % 10 >= 2 && total % 10 <= 4 && (total % 100 < 12 || total % 100 > 14);
   const crewLine = crew ? `Отметим ${total} ${few ? 'человека' : 'человек'}` : 'Отметим только тебя';
   const marked = targets.filter((t) => t.status === 'done' || t.status === 'already');
-  const inProgress = targets.some((t) => t.status === 'marking');
-  const leftover = targets.filter((t) => t.status === 'pending').length;   // можно досканировать
 
   // Показываем всех: кто отмечен, кто был отмечен раньше и кого не вышло отметить (с причиной).
   const resultList = () => (
@@ -367,26 +338,15 @@ export function Scanner({ active }: Props) {
       {/* Единый попап итога (телефон и ПК) */}
       {resultOpen && (
         <Popup title="Отметка на паре" onClose={() => setResultOpen(false)}>
-          <div class="row" style={{ marginBottom: 12, gap: 10 }}>
+          <div class="row" style={{ marginBottom: 12 }}>
             <span style={{ fontWeight: 700 }}>
               <span class="display">{marked.length}</span><span class="faint"> / {targets.length}</span> отмечено
             </span>
-            {inProgress && (
-              <span class="row faint" style={{ marginLeft: 'auto', gap: 7, fontSize: 13 }}>
-                <span class="spinner" style={{ display: 'inline-block', width: 14, height: 14, borderWidth: 2 }} /> QR принят, отмечаем…
-              </span>
-            )}
           </div>
           {resultList()}
-          {!inProgress && (leftover ? (
-            <button class="btn" style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={retryScan}>
-              <IconScan size={19} stroke={2.2} /> Досканировать ({leftover})
-            </button>
-          ) : (
-            <button class="btn" style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={startScan}>
-              <IconScan size={19} stroke={2.2} /> Сканировать снова
-            </button>
-          ))}
+          <button class="btn" style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }} onClick={rescan}>
+            <IconScan size={19} stroke={2.2} /> Сканировать снова
+          </button>
         </Popup>
       )}
 
