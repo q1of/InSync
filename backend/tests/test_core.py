@@ -816,3 +816,43 @@ class TestHistoryIncoming:
     def test_failed_incoming_is_ignored(self, db):
         self._record(2, 1, "s1", success=False)
         assert self._history() == []
+
+
+class TestCounterFriendRequest:
+    @pytest.fixture
+    def db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(database.settings, "database_path", str(tmp_path / "f.db"))
+
+        async def prepare():
+            await database.init_db()
+            for tid, name in [(1, "Я"), (2, "Друг")]:
+                await database.upsert_user(tid, name)
+
+        asyncio.run(prepare())
+
+    def test_counter_request_makes_friends(self, db):
+        from backend.services import friend_service as fs
+
+        async def run():
+            assert (await fs.send_request(2, 1))["success"]
+            res = await fs.send_request(1, 2)      # встречная заявка
+            return res, await fs.get_friends(1), await fs.get_friends(2), await fs.get_pending_requests(1)
+
+        res, mine, his, pending = asyncio.run(run())
+        assert res == {"success": True, "accepted": True}
+        assert [f["telegram_id"] for f in mine] == [2] and [f["telegram_id"] for f in his] == [1]
+        assert pending == []
+
+    def test_old_mutual_pending_requests_resolve(self, db):
+        # Заявки друг другу, оставшиеся с прошлой версии: повторная отправка делает друзьями.
+        from backend.services import friend_service as fs
+
+        async def run():
+            async with database.get_db() as conn:
+                await conn.execute("INSERT INTO friendships (user_id, friend_id, status) VALUES (1, 2, 'pending')")
+                await conn.execute("INSERT INTO friendships (user_id, friend_id, status) VALUES (2, 1, 'pending')")
+                await conn.commit()
+            return await fs.send_request(1, 2), await fs.get_friends(1), await fs.get_friends(2)
+
+        res, mine, his = asyncio.run(run())
+        assert res["accepted"] and len(mine) == 1 and len(his) == 1

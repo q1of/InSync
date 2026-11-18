@@ -50,6 +50,17 @@ async def send_request(from_id: int, to_id: int) -> dict:
             if to_count >= settings.friend_limit:
                 return {"success": False, "error": "У пользователя лимит друзей"}
 
+            # Он уже звал нас в друзья — встречная заявка сразу делает друзьями.
+            # Проверяем до дубликатов: так разрешаются и старые «заявки друг другу».
+            async with db.execute(
+                "SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'",
+                (to_id, from_id),
+            ) as cursor:
+                counter = await cursor.fetchone()
+            if counter:
+                res = await accept_request(from_id, to_id)
+                return {**res, "accepted": True} if res.get("success") else res
+
             # Проверяем дубликаты
             async with db.execute(
                 "SELECT status FROM friendships WHERE user_id = ? AND friend_id = ?",

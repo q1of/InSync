@@ -40,7 +40,13 @@ export function Friends({ onPendingChange, inviteCode }: Props) {
     e.preventDefault();
     const id = addId.trim();
     if (!id) return;
-    try { await sendFriendRequestApi(id); setAddId(''); flash('Заявка отправлена'); haptic?.notificationOccurred?.('success'); }
+    try {
+      const res: any = await sendFriendRequestApi(id);
+      setAddId('');
+      // Он уже звал тебя в друзья — встречная заявка сразу делает вас друзьями.
+      if (res?.accepted) { flash('Вы теперь друзья'); load(); } else flash('Заявка отправлена');
+      haptic?.notificationOccurred?.('success');
+    }
     catch (err: any) { flash(err.message || 'Не удалось', false); haptic?.notificationOccurred?.('error'); }
   };
   const accept = async (tid: number) => { try { await acceptFriendApi(tid); haptic?.impactOccurred?.('light'); load(); } catch (e: any) { flash(e.message || 'Ошибка', false); } };
