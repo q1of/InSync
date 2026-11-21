@@ -237,6 +237,13 @@ input[type="password"]::-webkit-strong-password-auto-fill-button { display: none
 .stagger > *:nth-child(4) { animation-delay: 0.18s; }
 .stagger > *:nth-child(5) { animation-delay: 0.23s; }
 .stagger > *:nth-child(6) { animation-delay: 0.28s; }
+/* Дальше каскад продолжается, а с 11-го — общая задержка: без неё 7-й и следующие
+   появлялись сразу, раньше 6-го, и волна обрывалась. Ниже экрана их всё равно не видно. */
+.stagger > *:nth-child(7) { animation-delay: 0.33s; }
+.stagger > *:nth-child(8) { animation-delay: 0.38s; }
+.stagger > *:nth-child(9) { animation-delay: 0.43s; }
+.stagger > *:nth-child(10) { animation-delay: 0.48s; }
+.stagger > *:nth-child(n+11) { animation-delay: 0.53s; }
 
 .spinner {
   width: 34px; height: 34px; border-radius: 50%;
