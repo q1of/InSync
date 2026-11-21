@@ -608,8 +608,55 @@ class TestPresence:
 
     def test_left_or_never_entered(self):
         assert acs_mod.presence_problem([], self.NOW, "А-213", "В-78") == acs_mod.NOT_INSIDE
-        events = [self.ev(1, "В78 А 2эт", -900), self.ev(2, "В78 А 1эт ЛК-3", -300)]
+        events = [self.ev(1, "В78 А 2эт", -7200), self.ev(2, "В78 А 1эт ЛК-3", -3600)]
         assert acs_mod.presence_problem(events, self.NOW, "А-213", "В-78") == acs_mod.NOT_INSIDE
+
+    # Реальные названия из Пульса: корпус пары в расписании и зоны турникетов.
+    def real(self, kind, enter, exit_="", dt=-600):
+        return {"time": self.NOW + dt, "kind": kind, "enter": enter, "exit": exit_}
+
+    @pytest.mark.parametrize("room,building", [("Дистанционно", "СДО"), ("Дистанционно", "")])
+    def test_remote_lesson_is_never_a_problem(self, room, building):
+        assert acs_mod.presence_problem([], self.NOW, room, building) is None
+
+    @pytest.mark.parametrize("building", ["СГ-22", "Фрязино", "", "Ставрополь"])
+    def test_campus_without_turnstiles_in_pulse_is_silent(self, building):
+        assert acs_mod.presence_problem([], self.NOW, "101", building) is None
+
+    def test_sports_complex_has_no_turnstile(self):
+        left_long_ago = [self.real(2, "Неконтролируемая территория", "В78 А 2эт ЦентральныйВход", -5400)]
+        assert acs_mod.presence_problem(left_long_ago, self.NOW, "ФОК-3", "В-78") is None
+
+    def test_walking_between_buildings_is_not_outside(self):
+        just_left = [self.real(2, "Неконтролируемая территория", "В78 А 2эт ЦентральныйВход", -300)]
+        assert acs_mod.presence_problem(just_left, self.NOW, "И-323", "В-78") is None
+
+    @pytest.mark.parametrize("zone,room,building", [
+        ("В78 А 2эт ЦентральныйВход", "А-411", "В-78"),
+        ("В78 Корпус И", "И-323", "В-78"),
+        ("В78 ЦКПП", "В-409", "В-78"),
+        ("В78 А 1эт ЛК-3 Временный центральный вход", "А-13", "В-78"),
+        ("П1 А 1эт ЦентральныйВход ДополнительныйВход", "Б-412", "МП-1"),
+        ("П1 А 1эт ЦентральныйВход ДополнительныйВход", "А-61", "МП-1"),
+        ("С20 1эт ЦентральныйВход", "435", "С-20"),
+        ("В86 Главный вход", "Л-110", "В-86"),
+    ])
+    def test_inside_right_campus_real_names(self, zone, room, building):
+        kind = 3 if "ЦКПП" in zone else 1
+        assert acs_mod.presence_problem([self.real(kind, zone)], self.NOW, room, building) is None
+
+    def test_other_campus_real_names(self):
+        events = [self.real(1, "П1 А 1эт ЦентральныйВход ДополнительныйВход")]
+        msg = acs_mod.presence_problem(events, self.NOW, "И-323", "В-78")
+        assert msg and "другом кампусе" in msg
+
+    def test_dorm_is_silent(self):
+        events = [self.real(3, "Общежитие №5", "Неконтролируемая территория")]
+        assert acs_mod.presence_problem(events, self.NOW, "А-411", "В-78") is None
+
+    def test_left_dorm_long_ago_and_never_entered(self):
+        events = [self.real(3, "Неконтролируемая территория", "Общежитие №5", -3600)]
+        assert acs_mod.presence_problem(events, self.NOW, "А-411", "В-78") == acs_mod.NOT_INSIDE
 
     def test_unknown_names_are_not_an_error(self):
         assert acs_mod.presence_problem([self.ev(1, "Главный вход")], self.NOW, "ИВЦ-104", "") is None

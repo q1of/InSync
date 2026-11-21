@@ -60,22 +60,48 @@ def _same_campus(a: str, b: str) -> bool:
     return a == b or a.endswith(b) or b.endswith(a)
 
 
+# Кампусы с турникетами в Пульсе — те, что есть на его карте. В расписании корпус пары
+# приходит ровно таким кодом («В-78», «МП-1»…), у турникетов — «В78 …», «П1 …», «С20 …».
+# Пары в других местах (филиалы, «СДО») не проверяем: проходов там в Пульсе нет.
+TURNSTILE_CAMPUSES = ("В78", "В86", "МП1", "С20")
+# Дистанционные пары: корпус «СДО», аудитория «Дистанционно».
+_REMOTE_RE = re.compile(r"дистанц|онлайн|online|\bсдо\b", re.IGNORECASE)
+# Здания на территории без своих турникетов в Пульсе (ФОК — спорткомплекс).
+_NO_TURNSTILE_ROOM_RE = re.compile(r"^\s*ФОК", re.IGNORECASE)
+# Вышел из корпуса недавно — скорее всего, идёт в соседний (И, ФОК): это не «не в вузе».
+TRANSIT_S = 15 * 60
+
+
 def presence_problem(events: list[dict], now: float, room: str | None, building: str | None) -> str | None:
-    """Почему студента нет в корпусе пары по последнему событию турникетов (или None)."""
+    """Почему студента нет в кампусе пары по последнему событию турникетов (или None).
+
+    Правило одно: лучше промолчать, чем напугать зря. Предупреждаем, только когда
+    знаем адрес пары, у этого адреса есть турникеты в Пульсе и по ним человек точно снаружи
+    (давно вышел / не входил сегодня) или точно в другом кампусе.
+    """
+    if _REMOTE_RE.search(f"{room or ''} {building or ''}"):
+        return None
+    lesson_campus, _ = lesson_place(None, building) if building else lesson_place(room, None)
+    if not lesson_campus or not any(_same_campus(lesson_campus, c) for c in TURNSTILE_CAMPUSES):
+        return None
+    if _NO_TURNSTILE_ROOM_RE.match(room or ""):
+        return None
+
     past = [e for e in events if e["time"] <= now + 60]
     last = past[-1] if past else None
     zone = (last["enter"] or last["exit"]) if last else ""
-    # Пока сверка новая — пишем, что с чем сравнивали, чтобы поправить по реальным названиям.
     logger.warning("пропуск: аудитория=%r корпус=%r событий=%d последнее=%r турникет=%r",
                    room, building, len(past), last and last["kind"], zone)
-    if not last or last["kind"] == ACS_EXIT or "неконтролируем" in zone.lower():
+    if not last:
         return NOT_INSIDE
-    # Сверяем только кампус (адрес): Пироговка / Стромынка / Вернадского — они у турникетов
-    # и в расписании совпадают надёжно. Корпус/букву внутри кампуса НЕ сверяем: пары идут
-    # по разным корпусам одного адреса, а названия в Пульсе оформлены по-разному — ложные срабатывания.
-    lesson_campus, _ = lesson_place(room, building)
+    if last["kind"] == ACS_EXIT or "неконтролируем" in zone.lower():
+        return NOT_INSIDE if now - last["time"] > TRANSIT_S else None
+    # Сверяем только кампус (адрес). Корпус внутри адреса НЕ сверяем: пары идут в разных
+    # корпусах одного адреса, а проходы между ними Пульс пишет не везде.
     zone_campus, _ = zone_place(zone)
-    if lesson_campus and zone_campus and not _same_campus(lesson_campus, zone_campus):
+    if not zone_campus:
+        return None   # общежитие и прочие зоны без адреса — не знаем, молчим
+    if not _same_campus(lesson_campus, zone_campus):
         return f"По турникетам вы в другом кампусе ({zone}) — отметка может не засчитаться"
     return None
 
