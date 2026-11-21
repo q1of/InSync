@@ -100,6 +100,23 @@ def _is_retriable(success: bool, error: str | None) -> bool:
     return True
 
 
+UNTIL_SUCCESS = 1000   # «пока не отметится» — сканер повторяет на каждом QR, пока открыт
+
+
+def _max_attempts(success: bool, error: str | None, opted_out: bool = False) -> int:
+    """Сколько попыток (QR) дать человеку при таком ответе.
+
+    Отмечен / отключил сам — одна. Нет прохода через турникет — три: проход мог
+    ещё не дойти до Пульса. Неверный QR, сеть — пока не отметится. Остальные
+    отказы (сессия, не записан, архив) повтором не лечатся — одна.
+    """
+    if success or opted_out:
+        return 1
+    if "турникет" in (error or "").lower():
+        return 3
+    return UNTIL_SUCCESS if _is_retriable(success, error) else 1
+
+
 async def _flag_repeat(db, r: dict, scan_id: str | None, lesson_start: int | None) -> None:
     """Отмечает результат как повтор, если человек уже отмечен на этой паре.
 
@@ -246,6 +263,7 @@ async def mark_attendance(
             opted_out=r.get("opted_out", False),
             already_marked=r.get("already_marked", False),
             retriable=False if r.get("opted_out") else _is_retriable(r["success"], r.get("error")),
+            max_attempts=_max_attempts(r["success"], r.get("error"), r.get("opted_out", False)),
         )
         for r in raw_results
     ]

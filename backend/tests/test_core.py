@@ -903,3 +903,58 @@ class TestCounterFriendRequest:
 
         res, mine, his = asyncio.run(run())
         assert res["accepted"] and len(mine) == 1 and len(his) == 1
+
+
+class TestSelfApproveResponse:
+    """Реальные ответы Пульса из лога сервера (схема — из веб-приложения Пульса)."""
+
+    def test_approved_with_lesson_id(self):
+        raw = bytes.fromhex("12260a2430316131316334632d376565382d373638372d626137322d613531323161353631333363")
+        assert mirea_client._parse_selfapprove(raw) == (True, None)
+        assert mirea_client._approved_lesson_id(raw) == "01a11c4c-7ee8-7687-ba72-a5121a56133c"
+
+    @pytest.mark.parametrize("hexraw,retriable", [
+        ("0a020801", True),    # INCORRECT_TOKEN — следующий QR может пройти
+        ("0a020805", False),   # DID_NOT_PASS_ACS_SYSTEM — нет прохода в кампус
+        ("0a020803", False),   # NO_LINK_TO_LESSON
+        ("0a020802", True),    # WAITING
+        ("0a00", True),        # UNKNOWN (код 0 не пишется)
+    ])
+    def test_not_yet_is_a_failure_not_a_success(self, hexraw, retriable):
+        ok, reason = mirea_client._parse_selfapprove(bytes.fromhex(hexraw))
+        assert ok is False and reason
+        assert not mirea_client.is_already_marked(reason)
+        assert _is_retriable(False, reason) is retriable
+
+
+class TestAttemptLimits:
+    """Сколько попыток сканер даёт человеку — по каждому реальному ответу Пульса из лога."""
+
+    @pytest.mark.parametrize("hexraw,limit", [
+        ("0a020801", attendance.UNTIL_SUCCESS),   # неверный токен — пока не отметится
+        ("0a020802", attendance.UNTIL_SUCCESS),   # ожидание — пробуем дальше
+        ("0a020805", 3),                          # нет прохода — проход мог не дойти до Пульса
+        ("0a020803", 1),                          # не записан на занятие
+        ("0a020804", 1),                          # архив
+    ])
+    def test_limit_by_pulse_reason(self, hexraw, limit):
+        ok, reason = mirea_client._parse_selfapprove(bytes.fromhex(hexraw))
+        assert attendance._max_attempts(ok, reason) == limit
+
+    def test_marked_gets_exactly_one_request(self):
+        raw = bytes.fromhex("12260a2430316131316334632d376565382d373638372d626137322d613531323161353631333363")
+        ok, reason = mirea_client._parse_selfapprove(raw)
+        assert attendance._max_attempts(ok, reason) == 1
+
+    @pytest.mark.parametrize("error,limit", [
+        (SESSION_EXPIRED, 1),
+        ("Нужно перезайти", 1),
+        ("Сервер не отвечает", attendance.UNTIL_SUCCESS),
+        ("Ошибка сети: ConnectError", attendance.UNTIL_SUCCESS),
+        ("Пульс не подтвердил отметку — попробуйте ещё раз", 1),
+    ])
+    def test_limit_for_other_errors(self, error, limit):
+        assert attendance._max_attempts(False, error) == limit
+
+    def test_opted_out_is_not_retried(self):
+        assert attendance._max_attempts(False, "Отключил отметку на этой паре (Физика)", True) == 1

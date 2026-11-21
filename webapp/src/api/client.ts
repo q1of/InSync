@@ -109,6 +109,7 @@ export interface MarkResult {
   retriable: boolean;
   opted_out: boolean;   // сам отключил отметку на этой паре — не ошибка
   already_marked: boolean;   // уже был отмечен на этой паре — не новая отметка
+  max_attempts?: number;     // сколько попыток дать при этой ошибке (решает сервер)
 }
 export interface MarkResponse { results: MarkResult[]; total: number; successful: number; }
 

@@ -698,27 +698,40 @@ def extract_qr_token(qr_data: str) -> str | None:
     return None
 
 
+# Ответ Пульса (из его же веб-приложения): oneof response {
+#   notYet = 1 { reason: NotYetApprovedReason = 1 }   — НЕ отмечен, с причиной
+#   approved = 2 { lessonId = 1 }                     — отмечен
+# }. Раньше «notYet» с ненулевым кодом читался как «да», и отказы Пульса
+# показывались как успешная отметка.
+# Тексты: «Пульс не подтвердил» — повтор на новом QR не поможет (см. _is_retriable).
+_NOT_YET_REASONS = {
+    0: "Пульс не принял отметку — пробуем ещё",
+    1: "QR-код не принят Пульсом (устарел или с плохой связью) — ждём следующий",
+    2: "Пульс: ожидание подтверждения — пробуем ещё",
+    3: "Пульс не подтвердил: вы не записаны на это занятие",
+    4: "Пульс не подтвердил: занятие уже в архиве",
+    5: "Пульс не подтвердил: нет прохода через турникет в кампус",
+    6: "Пульс не подтвердил: на занятии отмечено уважительное отсутствие",
+    7: "Пульс не подтвердил: зафиксировано нарушение распорядка",
+}
+
+
 def _parse_selfapprove(data: bytes) -> tuple[bool | None, str | None]:
     """Разбор ответа SelfApprove. (approved, reason)."""
-    # BoolValue: 08 01  или  0a 02 08 01
     p = 0
     while p < len(data):
         key, p = _read_varint(data, p)
         field = key >> 3; wt = key & 7
         if field == 1 and wt == 0:
-            val, _ = _read_varint(data, p)
+            val, _ = _read_varint(data, p)   # старый формат BoolValue
             return bool(val), None
         if field == 1 and wt == 2:
-            raw, p2 = _ld(data, p)
-            inner = _string_field(raw, 1)
-            if inner:
-                return False, inner  # notYet с причиной
-            # вложенный BoolValue
-            kk = raw[0] if raw else 0
-            if kk == 0x08 and len(raw) >= 2:
-                return bool(raw[1]), None
-            p = p2
-            continue
+            raw, p = _ld(data, p)
+            reason = 0
+            for f, w, v in _fields(raw):
+                if f == 1 and w == 0:
+                    reason = v
+            return False, _NOT_YET_REASONS.get(reason, f"Пульс не принял отметку (код {reason}) — пробуем ещё")
         if field == 2 and wt == 2:
             # approved {lessonId}
             _, p = _ld(data, p)

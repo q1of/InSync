@@ -96,6 +96,8 @@ class AttendanceResult(BaseModel):
     opted_out: bool = False
     # Уже был отмечен на этой паре (сам или другом) — не новая отметка
     already_marked: bool = False
+    # Сколько всего попыток (QR) дать человеку при этой ошибке — решает сканер
+    max_attempts: int = 1
 
 class AttendanceResponse(BaseModel):
     results: List[AttendanceResult]

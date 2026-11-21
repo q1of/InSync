@@ -116,7 +116,9 @@ export function Scanner({ active }: Props) {
           if (r?.opted_out) return { ...t, status: 'skipped', error: r.error };
           const attempts = t.attempts + 1;
           const error = r ? r.error : 'Нужно перезайти';
-          if (attempts > (r?.retriable ? MAX_RETRY_ATTEMPTS : MAX_DEAD_ATTEMPTS)) return { ...t, status: 'failed', error, attempts };
+          // Сколько попыток дать — подсказывает сервер по причине отказа; без подсказки — как раньше.
+          const limit = r?.max_attempts ?? ((r?.retriable ? MAX_RETRY_ATTEMPTS : MAX_DEAD_ATTEMPTS) + 1);
+          if (attempts >= limit) return { ...t, status: 'failed', error, attempts };
           return { ...t, status: 'pending', error, attempts };
         }),
       );
